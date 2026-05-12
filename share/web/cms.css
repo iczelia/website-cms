@@ -176,6 +176,7 @@ a:hover { text-decoration: underline }
   gap: 16px;
   align-items: stretch;
 }
+.cms-edit-split > .cms-toolbar { grid-column: 1 / -1 }
 .cms-edit-split > .CodeMirror,
 .cms-edit-split > .cm-md + .CodeMirror {
   min-height: 60vh;
