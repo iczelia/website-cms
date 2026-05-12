@@ -27,6 +27,7 @@ use Carp             qw(croak);
 
 use Iczelia::HTTP;
 use Iczelia::Router;
+use Iczelia::Minify ();
 
 # Requests slower than this print a SLOW marker plus a timing
 # breakdown. Override via $ENV{ICZELIA_SLOW_REQ_S}.
@@ -396,6 +397,7 @@ sub _handle_one {
 
   # put() returns the canonical (ETag-stamped) response so the first
   # visitor sees what subsequent cache hits will see.
+  my $minified = 0;
   if ( $cache_key
     && ($resp->{status} || 200) == 200
     && !$resp->{_no_cache}
@@ -403,11 +405,23 @@ sub _handle_one {
   {
     eval {
       my $stored = $self->{cache}->put($cache_key, $resp);
-      $resp = $stored if $stored;
+      if ($stored) {$resp = $stored; $minified = 1}
       1;
     } or do {
       warn "cache put failed: $@";
     };
+  }
+
+  # Pages that never enter the response cache skip put()'s minify pass.
+  # Run it here so they ship the same packed body.
+  if ( !$minified
+    && ($resp->{status} || 200) == 200
+    && $resp->{headers}
+    && ($resp->{headers}{'Content-Type'} // '') =~ m{^text/html\b}i
+    && defined $resp->{body}
+    && length $resp->{body})
+  {
+    $resp->{body} = Iczelia::Minify::html($resp->{body});
   }
 
   my $keep_alive = _decide_keep_alive($req, \%opt);
