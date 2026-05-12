@@ -1,0 +1,94 @@
+#!/usr/bin/perl
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use strict;
+use warnings;
+use FindBin ();
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long qw(:config bundling no_auto_abbrev no_ignore_case);
+use POSIX        ();
+
+our $VERSION = '0.1.0';
+
+my %opt = (
+  config  => '/etc/iczelia/iczelia.conf',
+  listen  => undef,
+  socket  => undef,
+  workers => 4,
+  check   => 0,
+  help    => 0,
+  version => 0,
+);
+
+GetOptions(
+  'config=s'  => \$opt{config},
+  'listen=s'  => \$opt{listen},
+  'socket=s'  => \$opt{socket},
+  'workers=i' => \$opt{workers},
+  'check'     => \$opt{check},
+  'help|h'    => \$opt{help},
+  'version|V' => \$opt{version},
+) or die "iczelia-server: bad options; --help for usage\n";
+
+if ($opt{help}) {
+  print <<'USAGE';
+iczelia-server - dynamic site daemon for iczelia.net
+
+  --config <path>     config file (default: /etc/iczelia/iczelia.conf)
+  --listen host:port  TCP listen address
+  --socket <path>     unix-domain socket path
+  --workers N         preforked worker count (default: 4)
+  --check             load modules, validate config, exit 0
+  --version, -V       print version and exit
+  --help, -h          this message
+USAGE
+  exit 0;
+}
+
+if ($opt{version}) {print "iczelia-server $VERSION\n"; exit 0}
+
+require Iczelia;
+require Iczelia::Config;
+require Iczelia::Server;
+require Iczelia::App;
+require Iczelia::Warmer;
+
+my $cfg = Iczelia::Config->load(\%opt);
+
+if ($opt{check}) {
+  Iczelia::App->build($cfg);
+  print "iczelia-server: ok (version $VERSION)\n";
+  exit 0;
+}
+
+my $app = Iczelia::App->build($cfg);
+
+# Block until every math fragment referenced by the site is in
+# tex_cache, so the first end-user request after boot doesn't pay 20s
+# of synchronous LaTeX. The warmer forks all-cores in parallel.
+Iczelia::Warmer->new(cfg => $cfg)->warmup;
+
+my $srv = Iczelia::Server->new(
+  config => $cfg,
+  cache  => $app->{ctx}{cache},
+);
+$srv->router($app->{router});
+$srv->dynamic_lookup($app->{dynamic_lookup}) if $app->{dynamic_lookup};
+$srv->not_found_handler($app->{not_found})   if $app->{not_found};
+$srv->warmer_callback($app->{warmer})        if $app->{warmer};
+$srv->analytics_db($app->{ctx}{db});
+$srv->run;

@@ -1,0 +1,97 @@
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Containerfile for the iczelia.net daemon. Build context: repo root.
+#   cd /path/to/iczelia
+#   podman build -t iczelia:latest -f deploy/Containerfile .
+# Image bundles TeX Live + Perl + DBI/SQLite + curl. State at /var/lib/iczelia.
+
+FROM docker.io/library/debian:bookworm-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        perl \
+        libdbi-perl \
+        libdbd-sqlite3-perl \
+        ca-certificates \
+        curl \
+        sqlite3 \
+        texlive-latex-base \
+        texlive-latex-recommended \
+        texlive-fonts-recommended \
+        texlive-latex-extra \
+        dvipng \
+        dvisvgm \
+        zopfli \
+        brotli \
+        tini \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# oxipng isn't in Debian bookworm; pull the matching static-musl binary
+# from upstream. Build keeps going on download failure so offline rebuilds
+# still produce a working image (zopflipng is then the only optimizer).
+ARG OXIPNG_VERSION=9.1.5
+RUN set -eu; \
+    cd /tmp; \
+    case "$(uname -m)" in \
+      x86_64)  arch=x86_64-unknown-linux-musl  ;; \
+      aarch64) arch=aarch64-unknown-linux-musl ;; \
+      *) echo "WARN: no oxipng release for $(uname -m)" >&2; exit 0 ;; \
+    esac; \
+    tarball="oxipng-${OXIPNG_VERSION}-${arch}.tar.gz"; \
+    if curl -fsSLO --max-time 60 \
+        "https://github.com/oxipng/oxipng/releases/download/v${OXIPNG_VERSION}/${tarball}"; then \
+      tar xzf "$tarball" && \
+      install -m 0755 "oxipng-${OXIPNG_VERSION}-${arch}/oxipng" /usr/local/bin/oxipng && \
+      /usr/local/bin/oxipng --version; \
+    else \
+      echo "WARN: oxipng download failed; falling back to zopflipng-only optimization" >&2; \
+    fi; \
+    rm -rf /tmp/oxipng-*
+
+# Trim TeX a bit (font sources we don't render with --no-fonts; man pages,
+# docs, etc.). Saves ~200 MB without affecting math rendering.
+RUN rm -rf \
+    /usr/share/doc \
+    /usr/share/man \
+    /usr/share/texlive/texmf-dist/doc \
+    /usr/share/texlive/texmf-dist/source
+
+# Non-root user for the runtime
+RUN useradd --system --uid 1000 --shell /usr/sbin/nologin --home-dir /var/lib/iczelia iczelia \
+    && install -d -o iczelia -g iczelia -m 0755 /var/lib/iczelia /var/lib/iczelia/media /var/lib/iczelia/tmp
+
+WORKDIR /opt/iczelia
+COPY bin/    bin/
+COPY lib/    lib/
+COPY share/  share/
+RUN chmod +x bin/iczelia-server bin/iczelia-init bin/iczelia-passwd bin/iczelia-fetch-activity
+
+RUN install -d -o root -g root -m 0755 /etc/iczelia
+COPY deploy/iczelia.container.conf /etc/iczelia/iczelia.conf
+
+COPY deploy/entrypoint.sh /usr/local/bin/iczelia-entrypoint
+RUN chmod 0755 /usr/local/bin/iczelia-entrypoint
+
+USER iczelia
+WORKDIR /var/lib/iczelia
+EXPOSE 8731
+VOLUME ["/var/lib/iczelia"]
+
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/iczelia-entrypoint"]
+CMD ["server"]

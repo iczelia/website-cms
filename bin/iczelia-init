@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use strict;
+use warnings;
+use FindBin ();
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long   qw(:config bundling no_auto_abbrev);
+use File::Path     qw(make_path);
+use File::Basename qw(dirname);
+
+use Iczelia::Config;
+use Iczelia::DB;
+
+my %opt = (
+  config => '/etc/iczelia/iczelia.conf',
+  force  => 0,
+);
+GetOptions(
+  'config=s' => \$opt{config},
+  'force'    => \$opt{force},
+  'help|h'   => \&_usage,
+) or _usage();
+
+sub _usage {
+  print STDERR <<'USAGE';
+iczelia-init - create or update the iczelia.net SQLite database.
+
+  --config <path>  config file
+  --force          recreate from scratch (DESTROYS existing data)
+USAGE
+  exit 1;
+}
+
+my $cfg = Iczelia::Config->load(\%opt);
+
+my $db_path = $cfg->{db};
+if (-e $db_path && $opt{force}) {
+  print "wiping existing $db_path\n";
+  unlink $db_path or die "unlink $db_path: $!";
+}
+
+for my $d ($db_path, $cfg->{'media-dir'}, $cfg->{'tmp-dir'}) {
+  next unless $d;
+  my $p = $d eq $db_path ? dirname($d) : $d;
+  -d $p or make_path($p);
+}
+
+my $share = $cfg->{'share-dir'};
+my $db    = Iczelia::DB->connect($cfg);
+$db->apply_schema_file("$share/schema.sql");
+$db->apply_schema_file("$share/seed.sql");
+
+# Mint a cookie-secret beside the DB if there isn't one yet.
+my $secret_file = $cfg->{db};
+$secret_file =~ s{[^/]+\z}{cookie-secret};
+unless (-r $secret_file) {
+  open my $rng, '<:raw', '/dev/urandom' or die "/dev/urandom: $!";
+  my $buf;
+  sysread $rng, $buf, 32;
+  close $rng;
+  my $hex = unpack 'H*', $buf;
+  open my $fh, '>', $secret_file or die "$secret_file: $!";
+  print $fh $hex, "\n";
+  close $fh;
+  chmod 0600, $secret_file;
+  print "wrote cookie secret to $secret_file\n";
+}
+
+print "ok: db at $db_path\n";

@@ -1,0 +1,66 @@
+#!/usr/bin/perl
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use strict;
+use warnings;
+use FindBin ();
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long qw(:config bundling no_auto_abbrev);
+
+use Iczelia::Config;
+use Iczelia::DB;
+use Iczelia::Template;
+use Iczelia::Render;
+use Iczelia::Fetcher;
+
+my %opt = (config => '/etc/iczelia/iczelia.conf', verbose => 0);
+GetOptions(
+  'config=s' => \$opt{config},
+  'verbose'  => \$opt{verbose},
+  'help|h'   => sub {
+    print STDERR
+      "iczelia-fetch-activity - pull github/mastodon/bluesky into the activity table\n";
+    exit 1;
+  },
+) or exit 2;
+
+my $cfg = Iczelia::Config->load(\%opt);
+my $db  = Iczelia::DB->connect($cfg);
+my $tpl = Iczelia::Template->new(dirs => [$cfg->{'share-dir'} . '/templates']);
+my $rnd = Iczelia::Render->new(db => $db, template => $tpl);
+
+my $f = Iczelia::Fetcher->new(db => $db, render => $rnd);
+
+my $results = $f->run_all;
+for my $r (@$results) {
+  if ($opt{verbose} || $r->{status} ne 'ok') {
+    my $line = sprintf '%s  %-8s  count=%d',
+      scalar(localtime), $r->{source}, ($r->{count} // 0);
+    $line .= "  status=$r->{status}" if $r->{status} ne 'ok';
+    $line .= "  error=$r->{error}"   if $r->{error};
+    warn "$line\n";
+  }
+}
+
+# Optional: PURGE the public home page in nginx so the new activity is
+# visible immediately (no-op if nginx-purge-url isn't configured).
+my $purge = $cfg->{'nginx-purge-url'};
+if ($purge && $purge =~ m{^https?://}i) {
+  system('curl', '-fsS', '--max-time', 5, '-X', 'PURGE', "$purge/");
+}
+
+exit 0;

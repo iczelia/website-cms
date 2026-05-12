@@ -1,0 +1,80 @@
+#!/usr/bin/perl
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use strict;
+use warnings;
+use FindBin ();
+use lib "$FindBin::RealBin/../lib";
+use Getopt::Long qw(:config bundling no_auto_abbrev);
+
+use Iczelia::Config;
+use Iczelia::DB;
+use Iczelia::Auth;
+
+my %opt = (
+  config   => '/etc/iczelia/iczelia.conf',
+  username => 'admin',
+);
+
+GetOptions(
+  'config=s'   => \$opt{config},
+  'username=s' => \$opt{username},
+  'help|h'     => \&_usage,
+) or _usage();
+
+sub _usage {
+  print STDERR <<'USAGE';
+iczelia-passwd - set or change the admin password.
+
+  --config <path>  config file
+  --username <u>   admin username (default: admin)
+
+You will be prompted twice for the new password (no echo).
+USAGE
+  exit 1;
+}
+
+my $cfg = Iczelia::Config->load(\%opt);
+my $db  = Iczelia::DB->connect($cfg);
+
+# Use the class-method form of hash_password so we don't need to build a
+# full Iczelia::Auth (which would require the cookie-secret on disk).
+my $pw  = _read_password("Password for $opt{username}: ");
+my $pw2 = _read_password("Confirm: ");
+die "passwords do not match\n" unless $pw eq $pw2;
+die "password too short (>= 8 chars)\n" if length $pw < 8;
+
+my $h = Iczelia::Auth->hash_password($pw);
+$db->do_(
+  q{INSERT INTO auth(username, pwhash) VALUES(?, ?)
+      ON CONFLICT(username) DO UPDATE SET pwhash=excluded.pwhash},
+  $opt{username}, $h
+);
+
+print "ok: password set for $opt{username}\n";
+
+sub _read_password {
+  my ($prompt) = @_;
+  print STDERR $prompt;
+  STDERR->flush;
+  system("stty -echo 2>/dev/null");
+  my $pw = <STDIN>;
+  system("stty echo 2>/dev/null");
+  print STDERR "\n";
+  chomp $pw if defined $pw;
+  return $pw // '';
+}
