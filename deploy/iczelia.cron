@@ -21,3 +21,11 @@
 
 MAILTO=""
 */10 * * * * iczelia /opt/iczelia/bin/iczelia-fetch-activity --config /etc/iczelia/iczelia.conf
+
+# Auto-update: fast-forward a git checkout to the latest patch release on
+# the `release` branch (only the `z` in x.y.z; clean tree required). Off
+# by default -- the /opt/iczelia tree installed by `make install` is a
+# snapshot, not a checkout. Enable on checkout-based deployments by
+# pointing the path at the checkout and setting `update-restart-cmd` in
+# iczelia.conf (e.g. `sudo systemctl restart iczelia`):
+# */30 * * * * iczelia /path/to/checkout/bin/iczelia-update --config /etc/iczelia/iczelia.conf --quiet

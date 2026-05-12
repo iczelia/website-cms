@@ -28,6 +28,7 @@ Distro packages (Debian-flavoured names):
       iczelia-init           create the SQLite database
       iczelia-passwd         set or change the admin password
       iczelia-fetch-activity cron entry point for GitHub/Mastodon/Bluesky
+      iczelia-update         fast-forward the checkout to the latest patch release
     lib/Iczelia/             Perl modules
     share/
       schema.sql             DDL applied by iczelia-init
@@ -107,6 +108,28 @@ paths in `/etc/nginx/sites-available/iczelia.conf` for your certificate.
 - Math fragments are content-addressed in `tex_cache`. Oldest unused
   entries can be cleaned periodically:
   `DELETE FROM tex_cache WHERE created_at < strftime('%s','now') - 7*86400`.
+
+## Updates
+
+`bin/iczelia-update` keeps a git-based deployment current. It fetches
+the `release` branch, reads `lib/Iczelia.pm`'s `$VERSION` there, and
+only when that is a *patch-level* bump over the running version (the
+`z` in `x.y.z` moved forward and `x.y` is unchanged) and the working
+tree is clean, it fast-forwards the checkout to it. Minor/major bumps,
+downgrades, local edits and diverged history are reported and left for
+a human; `--dry-run` reports without changing anything.
+
+After a successful update it runs the command in `update-restart-cmd`
+(empty by default), e.g. `sudo systemctl restart iczelia`. Branch and
+remote are `update-branch` / `update-remote` (default `release` on
+`origin`; set `update-remote=` empty to track a purely local branch).
+
+This only makes sense when the code is a git checkout. The `make
+install` and Podman shapes copy a snapshot of the code, so update them
+by pulling this repo and re-running `make install` / rebuilding the
+image. To wire it up on a checkout-based deployment:
+
+    */30 * * * * iczelia /path/to/checkout/bin/iczelia-update --config /etc/iczelia/iczelia.conf --quiet
 
 ## Backups
 

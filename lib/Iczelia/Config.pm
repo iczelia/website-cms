@@ -35,20 +35,26 @@ use Iczelia::Util qw(detect_cores);
 #   chrome-dir        static visual chrome (CSS, fonts, asset packs)
 #   cookie-secret     hex-encoded HMAC key (>= 32 bytes of material)
 #   nginx-purge-url   optional loopback purge endpoint
+#   update-remote     git remote bin/iczelia-update fetches ('' = local branch)
+#   update-branch     branch bin/iczelia-update tracks (default: release)
+#   update-restart-cmd  shell command run after a successful self-update
 
 my %DEFAULTS = (
-  'listen-tcp'      => '127.0.0.1:8731',
-  'listen-socket'   => '',
-  'workers'         => detect_cores(),
-  'max-requests'    => 500,
-  'request-cap'     => 8 * 1024 * 1024,
-  'db'              => '',
-  'media-dir'       => '',
-  'tmp-dir'         => '',
-  'share-dir'       => '',
-  'chrome-dir'      => '',
-  'cookie-secret'   => '',
-  'nginx-purge-url' => '',
+  'listen-tcp'         => '127.0.0.1:8731',
+  'listen-socket'      => '',
+  'workers'            => detect_cores(),
+  'max-requests'       => 500,
+  'request-cap'        => 8 * 1024 * 1024,
+  'db'                 => '',
+  'media-dir'          => '',
+  'tmp-dir'            => '',
+  'share-dir'          => '',
+  'chrome-dir'         => '',
+  'cookie-secret'      => '',
+  'nginx-purge-url'    => '',
+  'update-remote'      => 'origin',
+  'update-branch'      => 'release',
+  'update-restart-cmd' => '',
 );
 
 sub load {
