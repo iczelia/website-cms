@@ -212,7 +212,15 @@ sub _login_form {
       error => $msg,
     }
   );
-  my $resp = Iczelia::HTTP::html($html);
+
+  # Like the guestbook form, this embeds a per-visitor anti-CSRF token
+  # bound to the iczelia_csrf cookie and is served to logged-out
+  # clients (so the nginx edge cache, which only bypasses on
+  # iczelia_sid, would happily cache and reshare it). Keep it out of
+  # every cache layer.
+  my $resp = Iczelia::HTTP::html($html,
+    headers => {'Cache-Control' => 'no-store'});
+  $resp->{_no_cache} = 1;
 
   if ($set) {
     $resp->{cookies} = [

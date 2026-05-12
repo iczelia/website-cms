@@ -88,7 +88,16 @@ sub render_public {
   );
 
   my $html = $ctx->{template}->render('views/guestbook.tpl', $base_vars);
-  my $resp = Iczelia::HTTP::html($html);
+
+  # The form embeds a per-visitor anti-CSRF token bound to the
+  # iczelia_csrf cookie, so this page must never be served from a
+  # shared cache (the nginx edge cache, a browser's bfcache, ...) --
+  # one visitor's token reaching another browser is exactly the
+  # "spurious 400 csrf" failure mode. no-store keeps it out of all of
+  # them; _no_cache also keeps it out of the daemon's own cache.
+  my $resp = Iczelia::HTTP::html($html,
+    headers => {'Cache-Control' => 'no-store'});
+  $resp->{_no_cache} = 1;
   if ($set) {
     $resp->{cookies} = [
       Iczelia::HTTP::make_cookie(
