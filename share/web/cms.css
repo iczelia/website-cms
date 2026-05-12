@@ -1,0 +1,295 @@
+/* iczelia.cms - admin styling. Functional, plain, no decoration. */
+
+* { box-sizing: border-box }
+html, body { margin: 0; padding: 0 }
+body.cms-body {
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  background: #fafaf9;
+  color: #222;
+  line-height: 1.5;
+}
+
+a { color: #0044aa; text-decoration: none }
+a:hover { text-decoration: underline }
+
+.cms-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: #1c1c1c;
+  color: #ddd;
+  padding: 0.5rem 1rem;
+}
+.cms-brand a { color: #ddd; font-weight: bold; font-size: 1rem; text-decoration: none }
+.cms-nav { display: flex; gap: 1rem; align-items: center; flex: 1 }
+.cms-nav a { color: #aaa }
+.cms-nav a:hover { color: white }
+.cms-logout { margin-left: auto }
+.cms-logout button {
+  background: transparent; border: 1px solid #555; color: #ccc;
+  padding: 0.25rem 0.5rem; cursor: pointer;
+}
+.cms-logout button:hover { color: white; border-color: #888 }
+
+.cms-main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1.5rem }
+.cms-footer { text-align: center; color: #888; font-size: 12px; padding: 1rem }
+
+.cms-grid { display: grid; gap: 1rem; grid-template-columns: repeat(3, 1fr) }
+.cms-card {
+  background: white; border: 1px solid #ddd; padding: 1rem;
+  border-radius: 4px;
+}
+.cms-card h2 { margin: 0 0 0.5rem; font-size: 1rem; color: #555 }
+.cms-list { list-style: none; padding: 0; margin: 0 }
+.cms-list li { padding: 0.25rem 0; border-bottom: 1px solid #f0f0f0 }
+.cms-list li:last-child { border-bottom: 0 }
+.cms-meta { font-size: 12px; color: #888; margin-left: 0.5em }
+
+.cms-btn {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #888;
+  background: #fafaf9;
+  color: #222;
+  cursor: pointer;
+  text-decoration: none;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: inherit;
+}
+.cms-btn:hover { background: #eee }
+.cms-btn-primary { background: #0044aa; color: white; border-color: #0044aa }
+.cms-btn-primary:hover { background: #0033aa }
+.cms-btn-cancel { background: transparent }
+.cms-btn-danger { background: #aa2200; color: white; border-color: #aa2200 }
+.cms-btn-danger:hover { background: #882200 }
+
+.cms-edit { background: white; border: 1px solid #ddd; padding: 1.5rem; border-radius: 4px }
+.cms-edit-head { margin-bottom: 1rem }
+.cms-edit-head h1 { margin: 0 0 0.25rem; font-size: 1.4rem }
+.cms-form fieldset {
+  border: 1px solid #ddd; padding: 0.75rem 1rem; margin: 0 0 1rem;
+  background: #fafafa;
+}
+.cms-form legend { font-weight: bold; padding: 0 0.4rem }
+.cms-form input[type="text"], .cms-form input[type="number"], .cms-form input[type="date"] {
+  width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 3px;
+  font-family: inherit; font-size: inherit;
+}
+.cms-form textarea {
+  width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.5;
+}
+.cms-help { color: #888; font-size: 12px; margin: 0 0 0.4rem }
+
+.cms-edit-grid { display: grid; gap: 1rem; grid-template-columns: 3fr 1fr }
+@media (max-width: 800px) { .cms-edit-grid { grid-template-columns: 1fr } }
+
+.cms-kvtable { width: 100%; border-collapse: collapse }
+.cms-kvtable th, .cms-kvtable td { padding: 0.25rem; border-bottom: 1px solid #eee }
+.cms-kvtable th { text-align: left; font-weight: normal; color: #666 }
+.cms-kvtable input { width: 100% }
+.cms-kvtable .cms-kvtable-actions { width: 2rem; text-align: center }
+.cms-row-del, .cms-row-add {
+  background: transparent; border: 1px solid #aaa; padding: 0.1rem 0.4rem;
+  cursor: pointer;
+}
+
+.cms-table { width: 100%; border-collapse: collapse; background: white }
+.cms-table th, .cms-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; text-align: left }
+.cms-table th { background: #f3f3f3; font-weight: normal; color: #555 }
+
+.cms-actions { margin-top: 1rem }
+.cms-flash { padding: 0.5rem 0.75rem; border-radius: 3px; margin-bottom: 1rem }
+.cms-flash-ok  { background: #e0fff0; border: 1px solid #88c }
+.cms-flash-err { background: #ffd5cc; border: 1px solid #c44 }
+
+.cms-badge { padding: 0.1rem 0.4rem; font-size: 11px; border-radius: 2px; background: #eee }
+.cms-badge-draft { background: #ffd; border: 1px solid #cc8 }
+
+.cms-login-body {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: #1c1c1c;
+}
+.cms-login {
+  background: white; padding: 2rem; border-radius: 4px;
+  width: 300px; max-width: 90vw;
+}
+.cms-login h1 { margin: 0 0 1rem; font-size: 1.2rem }
+.cms-login form p { margin: 0 0 0.75rem }
+.cms-login input { width: 100%; padding: 0.4rem; box-sizing: border-box }
+.cms-login button { width: 100%; padding: 0.5rem; cursor: pointer }
+
+.cms-settings { width: 100% }
+.cms-settings td { padding: 0.25rem 0.5rem }
+.cms-settings td:first-child { width: 30%; font-family: ui-monospace, monospace; font-size: 12px; color: #555 }
+.cms-act-section { margin: 1rem 0; padding: 0.75rem; background: #f5f5f5; border-radius: 3px }
+
+.cms-toolbar { display: flex; gap: 4px; margin: 0 0 0.4rem; flex-wrap: wrap }
+.cms-tb-btn {
+  background: #f3f3f3; border: 1px solid #bbb;
+  padding: 0.2rem 0.5rem; cursor: pointer;
+  font-family: ui-monospace, monospace; font-size: 12px;
+  border-radius: 2px;
+}
+.cms-tb-btn:hover { background: white }
+
+.cm-md + .CodeMirror, .cm-s-eclipse.CodeMirror {
+  border: 1px solid #ccc; border-radius: 3px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  height: auto; min-height: 240px;
+}
+.cms-edit-main .CodeMirror { min-height: 360px }
+
+/* live preview pane */
+.cms-preview {
+  margin-top: 1rem;
+  border: 1px solid #ddd;
+  background: white;
+  padding: 1rem;
+  border-radius: 3px;
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.cms-preview h2 { font-size: 1.2rem; margin: 0.5rem 0 }
+.cms-preview h3 { font-size: 1rem;   margin: 0.5rem 0 }
+.cms-preview pre {
+  background: #f5f5f5; padding: 0.5rem; border-radius: 3px;
+  overflow-x: auto;
+  font-family: ui-monospace, monospace; font-size: 12px;
+}
+.cms-preview code { font-family: ui-monospace, monospace; font-size: 12px }
+.cms-preview .math-display, .cms-preview .math-inline {
+  background: #fffce0; border: 1px dashed #cc9;
+}
+.preview-err { color: #c44 }
+
+/* server-rendered side-by-side preview pane */
+.cms-edit-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+.cms-edit-split > .CodeMirror,
+.cms-edit-split > .cm-md + .CodeMirror {
+  min-height: 60vh;
+  height: 60vh;
+}
+.cms-edit-split > textarea.cm-md { display: none }
+.cms-server-preview {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 12px;
+  min-height: 60vh;
+  max-height: 60vh;
+  overflow: auto;
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+.cms-server-preview img { max-width: 100% }
+.cms-server-preview pre {
+  background: #f5f5f5; padding: 0.5rem;
+  border-radius: 3px; overflow-x: auto;
+  font: 12px ui-monospace, monospace;
+}
+.cms-server-preview code { font: 12px ui-monospace, monospace }
+.cms-server-preview h1 { font-size: 1.3rem; margin: 0.4rem 0 }
+.cms-server-preview h2 { font-size: 1.15rem; margin: 0.4rem 0 }
+.cms-server-preview h3 { font-size: 1rem;   margin: 0.4rem 0 }
+/* minimal highlighter palette so admin preview shows colours */
+.cms-server-preview .hl-com { color: #888; font-style: italic }
+.cms-server-preview .hl-str { color: #c44 }
+.cms-server-preview .hl-chr { color: #c44 }
+.cms-server-preview .hl-num { color: #075 }
+.cms-server-preview .hl-kw  { color: #008; font-weight: bold }
+.cms-server-preview .hl-typ { color: #084 }
+.cms-server-preview .hl-cst { color: #062 }
+.cms-server-preview .hl-pre { color: #66c }
+.cms-server-preview .hl-op  { color: #000 }
+.cms-server-preview .hl-mac { color: #93c }
+.cms-server-preview .hl-id  { color: #000 }
+@media (max-width: 1000px) {
+  .cms-edit-split { grid-template-columns: 1fr }
+}
+
+.cms-inline-form { display: inline }
+.cms-inline-form button { margin-right: 0.4rem }
+
+.gb-mod-entry {
+  border: 1px solid #ddd; padding: 0.75rem; margin: 0 0 0.75rem; background: white;
+  border-radius: 3px;
+}
+.gb-mod-pending { background: #fffaf0; border-color: #cc8 }
+.gb-mod-meta { display: flex; justify-content: space-between; margin-bottom: 0.5rem }
+.gb-mod-preview { margin: 0 0 0.5rem; padding: 0.5rem; background: #fafafa; border-radius: 2px }
+.gb-mod-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem }
+.gb-mod-reply-form summary { cursor: pointer; padding: 0.4rem 0; color: #555 }
+.gb-mod-reply { border-left: 3px solid #88c; padding: 0.4rem 0.6rem; margin: 0.5rem 0 }
+
+.cms-media-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.cms-media-tile {
+  margin: 0; background: white; border: 1px solid #ddd;
+  padding: 0.5rem; text-align: center; border-radius: 3px;
+}
+.cms-media-tile img {
+  max-width: 100%; max-height: 120px; object-fit: contain;
+}
+.cms-media-tile figcaption { font-size: 11px; color: #666; margin-top: 0.4rem }
+.cms-media-url {
+  display: inline-block; font-size: 10px;
+  word-break: break-all;
+}
+
+.gb-honeypot {
+  position: absolute !important; left: -9999px !important;
+  width: 1px !important; height: 1px !important;
+  opacity: 0 !important; pointer-events: none;
+}
+
+/* analytics dashboard */
+.cms-analytics .cms-anal-totals {
+  display: flex; gap: 1.5rem; margin: 1rem 0;
+  padding: 0.75rem; background: #f6f6f6;
+  border: 1px solid #ddd; border-radius: 3px;
+}
+.cms-analytics .cms-anal-totals strong {
+  font-size: 1.4rem; display: block;
+}
+.cms-analytics .cms-anal-block { margin: 1.5rem 0 }
+.cms-analytics .cms-chart {
+  width: 100%; max-width: 720px;
+  height: 200px; display: block;
+  background: #fafafa; border: 1px solid #ddd;
+}
+.cms-anal-controls { font-size: 13px; color: #555 }
+.cms-aliases { list-style: none; padding: 0.4rem 0; margin: 0; font-size: 12px }
+.cms-aliases li { margin: 0.2rem 0 }
+.cms-btn-tiny { font-size: 11px; padding: 0.1rem 0.4rem }
+.cms-error { color: #c44; padding: 0.4rem 0.8rem; border-left: 3px solid #c44; background: #fff8f8 }
+
+/* settings - grouped per namespace */
+.cms-settings-group {
+  border: 1px solid #ddd; border-radius: 3px;
+  padding: 0.6rem 1rem 0.4rem; margin: 0 0 1rem;
+  background: #fafafa;
+}
+.cms-settings-group > legend {
+  padding: 0 0.5rem; font-weight: bold; color: #444;
+}
+.cms-settings-group .cms-settings { margin: 0 }
+.cms-settings-group .cms-settings td { padding: 0.15rem 0.4rem }
+.cms-settings-group .cms-settings input { width: 100% }
+.cms-settings-group-theme .cms-settings input[name^="theme.code."]:not([name$=".bg"]):not([name$=".border"]):not([name$=".text"]) {
+  /* hint that these are colour fields by setting type-ish width */
+  font-family: ui-monospace, monospace;
+}
