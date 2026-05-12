@@ -1,0 +1,9 @@
+{
+  "title": "Generic page",
+  "fields": [
+    { "name":  "intro", "kind": "markdown_inline", "label": "Intro paragraph",
+      "help":  "Optional. Shown above the body in a smaller style." },
+    { "name":  "body",  "kind": "markdown",        "label": "Body",
+      "help":  "Main content. Markdown with code, math, footnotes." }
+  ]
+}

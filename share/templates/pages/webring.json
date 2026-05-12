@@ -1,0 +1,7 @@
+{
+  "title": "Webring",
+  "fields": [
+    { "name": "intro", "kind": "markdown", "label": "Intro paragraph" }
+  ],
+  "extra": "webring_members"
+}

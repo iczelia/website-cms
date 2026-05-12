@@ -1,0 +1,7 @@
+{
+  "title": "List intro",
+  "fields": [
+    { "name": "intro", "kind": "markdown", "label": "Intro paragraph",
+      "help": "Shown above the post list." }
+  ]
+}

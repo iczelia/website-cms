@@ -1,0 +1,11 @@
+{
+  "title": "CV",
+  "fields": [
+    { "name": "intro",      "kind": "markdown", "label": "Intro" },
+    { "name": "experience", "kind": "markdown", "label": "Experience" },
+    { "name": "education",  "kind": "markdown", "label": "Education" },
+    { "name": "works",      "kind": "markdown", "label": "Selected works" },
+    { "name": "pdf_url",    "kind": "text",     "label": "PDF link (optional)",
+      "help": "Internal /media/... path or an external https URL." }
+  ]
+}

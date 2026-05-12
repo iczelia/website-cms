@@ -1,0 +1,38 @@
+{
+  "title": "About",
+  "fields": [
+    {
+      "name":  "intro",
+      "kind":  "markdown",
+      "label": "Intro paragraph"
+    },
+    {
+      "name":  "vitals",
+      "kind":  "kv-table",
+      "label": "Vital statistics",
+      "columns": [
+        { "name": "key",   "label": "Key",   "kind": "text",            "width": "32%" },
+        { "name": "value", "label": "Value", "kind": "markdown_inline", "width": "68%" }
+      ]
+    },
+    {
+      "name":  "elsewhere",
+      "kind":  "kv-table",
+      "label": "Elsewhere on the wires",
+      "columns": [
+        { "name": "where", "label": "Where", "kind": "text",            "width": "20%" },
+        { "name": "label", "label": "Label", "kind": "markdown_inline", "width": "45%" },
+        { "name": "url",   "label": "URL",   "kind": "text",            "width": "35%" }
+      ]
+    },
+    { "name": "reach_out",   "kind": "markdown", "label": "Reach-out blurb" },
+    { "name": "employment",  "kind": "markdown", "label": "Employment / experience" },
+    { "name": "talks",       "kind": "markdown", "label": "Talks, guest lectures and papers" },
+    { "name": "links",       "kind": "markdown", "label": "Links (sub-pages of this site)" },
+    { "name": "hardware",    "kind": "markdown", "label": "Hardware" },
+    { "name": "setup",       "kind": "markdown", "label": "Setup" },
+    { "name": "patreon",     "kind": "markdown", "label": "Patreon" },
+    { "name": "misc",        "kind": "markdown", "label": "Misc (scholarship, languages, interests, travel)" },
+    { "name": "qr",          "kind": "markdown", "label": "QR code / footer figure" }
+  ]
+}

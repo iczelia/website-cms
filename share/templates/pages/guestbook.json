@@ -1,0 +1,7 @@
+{
+  "title": "Guestbook",
+  "fields": [
+    { "name": "intro", "kind": "markdown", "label": "Intro paragraph",
+      "help": "Shown at the top of the public guestbook page." }
+  ]
+}
