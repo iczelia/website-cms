@@ -457,6 +457,7 @@ sub _kvtable_html {
   my $field_a = escape_attr($f->{name});
   push @bits, qq{<table class="cms-kvtable" data-field="$field_a">};
   push @bits, '<thead><tr>';
+  push @bits, '<th class="cms-kvtable-handle"></th>';
   for my $c (@{$f->{columns}}) {
     my $w =
       defined $c->{width}
@@ -468,6 +469,7 @@ sub _kvtable_html {
   my $idx = 0;
   for my $r (@$rows) {
     push @bits, '<tr>';
+    push @bits, '<td class="cms-kvtable-handle"><span class="cms-drag-handle" draggable="true">&#x283F;</span></td>';
     for my $c (@{$f->{columns}}) {
       my $v  = escape_attr($r->{$c->{name}} // '');
       my $nm = escape_attr($f->{name} . "__row${idx}__" . $c->{name});
@@ -481,6 +483,7 @@ sub _kvtable_html {
 
   # Always provide one trailing empty row so users can extend without JS.
   push @bits, '<tr>';
+  push @bits, '<td class="cms-kvtable-handle"><span class="cms-drag-handle" draggable="true">&#x283F;</span></td>';
   for my $c (@{$f->{columns}}) {
     my $nm = escape_attr($f->{name} . "__row${idx}__" . $c->{name});
     push @bits, qq{<td><input type="text" name="$nm" value=""></td>};

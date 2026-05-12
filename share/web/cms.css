@@ -92,6 +92,11 @@ a:hover { text-decoration: underline }
 .cms-kvtable th { text-align: left; font-weight: normal; color: #666 }
 .cms-kvtable input { width: 100% }
 .cms-kvtable .cms-kvtable-actions { width: 2rem; text-align: center }
+.cms-kvtable .cms-kvtable-handle { width: 1.5rem; text-align: center }
+.cms-drag-handle { cursor: grab; user-select: none; color: #bbb }
+.cms-drag-handle:active { cursor: grabbing }
+.cms-kvtable tr.cms-dragging { opacity: 0.4 }
+.cms-kvtable tr.cms-drag-over td { border-top: 2px solid #555 }
 .cms-row-del, .cms-row-add {
   background: transparent; border: 1px solid #aaa; padding: 0.1rem 0.4rem;
   cursor: pointer;

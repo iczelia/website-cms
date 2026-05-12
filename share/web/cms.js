@@ -173,6 +173,15 @@
     function rowCount() {
       return table.querySelectorAll('tbody > tr').length;
     }
+
+    function renumberRows() {
+      table.querySelectorAll('tbody > tr').forEach(function(tr, i) {
+        tr.querySelectorAll('input').forEach(function(inp) {
+          inp.name = inp.name.replace(/row\d+/, 'row' + i);
+        });
+      });
+    }
+
     function newRow() {
       var idx = rowCount();
       var tr = document.createElement('tr');
@@ -185,6 +194,13 @@
           del.type = 'button'; del.className = 'cms-row-del';
           del.innerHTML = '&times;';
           td.appendChild(del);
+        } else if (th.classList.contains('cms-kvtable-handle')) {
+          td.className = 'cms-kvtable-handle';
+          var span = document.createElement('span');
+          span.className = 'cms-drag-handle';
+          span.draggable = true;
+          span.textContent = '⠿';
+          td.appendChild(span);
         } else {
           var input = document.createElement('input');
           input.type = 'text';
@@ -214,6 +230,52 @@
         var tr = e.target.closest('tr');
         if (tr) tr.parentNode.removeChild(tr);
       }
+    });
+
+    var dragSrc = null;
+
+    table.addEventListener('dragstart', function(e) {
+      if (!e.target.classList.contains('cms-drag-handle')) return;
+      dragSrc = e.target.closest('tr');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', '');
+      setTimeout(function() { if (dragSrc) dragSrc.classList.add('cms-dragging'); }, 0);
+    });
+
+    table.addEventListener('dragend', function() {
+      if (dragSrc) dragSrc.classList.remove('cms-dragging');
+      table.querySelectorAll('.cms-drag-over').forEach(function(el) {
+        el.classList.remove('cms-drag-over');
+      });
+      dragSrc = null;
+    });
+
+    table.addEventListener('dragover', function(e) {
+      if (!dragSrc) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var tr = e.target.closest('tbody tr');
+      if (!tr || tr === dragSrc) return;
+      table.querySelectorAll('.cms-drag-over').forEach(function(el) {
+        el.classList.remove('cms-drag-over');
+      });
+      tr.classList.add('cms-drag-over');
+    });
+
+    table.addEventListener('drop', function(e) {
+      if (!dragSrc) return;
+      e.preventDefault();
+      var tr = e.target.closest('tbody tr');
+      if (!tr || tr === dragSrc) return;
+      var tbody = table.querySelector('tbody');
+      var rect = tr.getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height / 2) {
+        tbody.insertBefore(dragSrc, tr);
+      } else {
+        tbody.insertBefore(dragSrc, tr.nextSibling);
+      }
+      tr.classList.remove('cms-drag-over');
+      renumberRows();
     });
   }
 
