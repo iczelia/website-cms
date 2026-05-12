@@ -38,3 +38,4 @@ inc/
 attic/
 var/
 share/chrome/
+deploy-remote.sh
