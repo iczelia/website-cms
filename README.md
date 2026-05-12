@@ -39,6 +39,10 @@ Distro packages (Debian-flavoured names):
     t/                       test suite (Test::More)
     deploy/                  systemd unit, nginx site, tmpfiles, cron, install Makefile
 
+Things that contain `iczelia-net` in their name are specific to the public-facing deployment at
+https://iczelia.net and can be safely ignored or deleted for a personal deployment. They however
+may contain some useful reference material for nginx config and the like.
+
 ## Quick start (development)
 
     bin/iczelia-init --force        # creates ./var/site.db

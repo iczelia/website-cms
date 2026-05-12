@@ -33,7 +33,7 @@ jobs:
           mkdir -p var/tmp var/media
           bin/iczelia-init --force
       - name: iczelia-server --check
-        run: make check
+        run: bin/iczelia-server --check
 
   test:
     name: tests (perl ${{ matrix.perl }})
@@ -58,7 +58,7 @@ jobs:
             texlive-fonts-recommended texlive-latex-extra \
             dvisvgm dvipng zopfli brotli curl
       - name: prove t/
-        run: make test
+        run: prove -l --jobs 4 t/
 
   image:
     name: container build + smoke test
