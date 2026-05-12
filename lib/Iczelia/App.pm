@@ -33,6 +33,7 @@ use Iczelia::Handlers::Admin;
 use Iczelia::Handlers::Guestbook;
 use Iczelia::Handlers::Feeds;
 use Iczelia::Handlers::Static;
+use Iczelia::Handlers::Honeypot;
 use Iczelia::Handlers::Dynamic;
 use Iczelia::Handlers::Analytics;
 use Iczelia::Handlers::Backup;
@@ -78,6 +79,7 @@ sub build {
     fetcher  => $fetcher,
   };
   Iczelia::Handlers::Static->register($router, $ctx);
+  Iczelia::Handlers::Honeypot->register($router, $ctx);
   Iczelia::Handlers::Feeds->register($router, $ctx);
   Iczelia::Handlers::Guestbook->register($router, $ctx);
   Iczelia::Handlers::Public->register($router, $ctx);

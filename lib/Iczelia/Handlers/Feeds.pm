@@ -20,6 +20,7 @@ use warnings;
 use utf8;
 use Iczelia::HTTP ();
 use Iczelia::Util qw(escape_html fmt_iso);
+use Iczelia::Handlers::Honeypot ();
 
 # Feeds: Atom (/feed.xml), RSS 2.0 (/index.xml, /rss.xml), sitemap, and
 # a minimal robots.txt. Bodies render through Markup but math placeholders
@@ -318,10 +319,14 @@ sub _sitemap {
 sub _robots {
   my ($ctx) = @_;
   my $base = _base_url($ctx->{db});
+  my $body = "User-agent: *\n";
+  $body .= "Disallow: $_\n"
+    for ('/admin/', @Iczelia::Handlers::Honeypot::PATHS);
+  $body .= "\nSitemap: $base/sitemap.xml\n";
   return {
     status  => 200,
     headers => {'Content-Type' => 'text/plain; charset=utf-8'},
-    body => "User-agent: *\nDisallow: /admin/\n\nSitemap: $base/sitemap.xml\n",
+    body    => $body,
   };
 }
 
