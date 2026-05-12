@@ -194,7 +194,11 @@ sub _search {
     $ctx->{render}->{template}->render(
       'views/search.tpl',
       $ctx->{render}->base_vars(
-        title       => 'iczelia :: search',
+        title => 'iczelia :: search',
+        meta  => {
+          robots      => 'noindex,follow',
+          description  => 'Search the blog and journal.',
+        },
         q           => $q,
         results     => \@results,
         empty_query => (@tok ? 0 : 1),
@@ -227,8 +231,12 @@ sub _tag_index {
     keys %count;
   my $vars = $ctx->{render}->base_vars(
     title => "iczelia :: $kind tags",
-    kind  => $kind,
-    tags  => \@list,
+    meta  => {
+      canonical   => "/$kind/tags/",
+      description  => "All $kind tags.",
+    },
+    kind => $kind,
+    tags => \@list,
   );
   return Iczelia::HTTP::html(
     $ctx->{render}->{template}->render('views/tag_index.tpl', $vars));

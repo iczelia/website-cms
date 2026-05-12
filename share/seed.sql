@@ -19,6 +19,9 @@
 INSERT OR IGNORE INTO settings (key, value) VALUES
   ('site.title',        'iczelia'),
   ('site.tagline',      'personal site v2.0'),
+  ('site.description',  'Personal site, blog, and journal of Kamila Szewczyk.'),
+  ('site.keywords',     ''),
+  ('site.og_image',     ''),
   ('site.author',       'Kamila Szewczyk'),
   ('site.email',        'k@iczelia.net'),
   ('site.base_url',     'https://iczelia.net'),

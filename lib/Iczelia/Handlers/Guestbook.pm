@@ -79,6 +79,7 @@ sub render_public {
     title_short  => 'guestbook',
     slug         => 'guestbook',
     page         => {is_guestbook => 1},
+    meta         => {canonical => '/guestbook/', description => 'Sign the guestbook.'},
     data         => _cooked($ctx, $page),
     entries      => $entries,
     csrf         => $token,

@@ -173,6 +173,7 @@ sub render_home {
   my $vars = $self->base_vars(
     title => $page->{title},
     page  => {is_home => 1},
+    meta  => {canonical => '/'},
     data  => {
       profile_html => $profile_html,
       currently    => $currently,
@@ -209,11 +210,28 @@ sub render_page {
 
   my $cooked = $self->_cook_page_data($page->{template}, $data);
 
+  my %meta = (og_title => $page->{title});
+  if (defined $tag_filter && length $tag_filter) {
+
+    # The ?tag= form duplicates the canonical /<slug>/tag/<tag>/ URL.
+    $meta{canonical} = "/$slug/tag/" . _url_seg($tag_filter) . '/';
+    $meta{robots}    = 'noindex,follow';
+  }
+  else {
+    $meta{canonical} = "/$slug/";
+  }
+  for my $f (qw(intro_html body_html)) {
+    next unless defined $cooked->{$f} && length $cooked->{$f};
+    my $d = _meta_desc($cooked->{$f});
+    if (length $d) {$meta{description} = $d; last}
+  }
+
   my $vars = $self->base_vars(
     title       => $page->{title},
     title_short => $slug,
     slug        => $slug,
     page        => {"is_$slug" => 1},
+    meta        => \%meta,
     data        => $cooked,
     tag_filter  => $tag_filter,
   );
@@ -287,6 +305,12 @@ sub render_dynamic {
       $cooked{$k} = $data->{$k};
     }
   }
+  my %meta = (canonical => $route, og_title => $row->{title});
+  for my $f (qw(body_html intro_html)) {
+    next unless defined $cooked{$f} && length $cooked{$f};
+    my $d = _meta_desc($cooked{$f});
+    if (length $d) {$meta{description} = $d; last}
+  }
   my $html = eval {
     $self->{template}->render(
       "views/$tpl.tpl",
@@ -294,6 +318,7 @@ sub render_dynamic {
         title       => $row->{title},
         title_short => $row->{title},
         route       => $route,
+        meta        => \%meta,
         data        => \%cooked,
         page        => {is_dynamic => 1},
       )
@@ -325,14 +350,24 @@ sub render_post {
   }
 
   my $body_html = $self->_md($row->{body});
+  my @tags      = grep {length} split /\s*,\s*/, ($row->{tags} || '');
 
   my $vars = $self->base_vars(
     title => "iczelia :: " . $row->{title},
     page  => {('is_' . $kind) => 1},
-    post  => {
+    meta  => {
+      canonical      => "/$kind/$slug/",
+      og_type        => 'article',
+      og_title       => $row->{title},
+      description     => _meta_desc($body_html),
+      keywords       => join(', ', @tags),
+      published_time => ($row->{date} // ''),
+      modified_time  => ($row->{updated_at} ? _atom_iso($row->{updated_at}) : ''),
+    },
+    post => {
       title       => $row->{title},
       date_fmt    => fmt_date($row->{date}),
-      tags        => [split /\s*,\s*/, ($row->{tags} || '')],
+      tags        => \@tags,
       body_html   => $body_html,
       kind        => $kind,
       slug        => $slug,
@@ -398,11 +433,11 @@ sub render_journal_index {
   my ($self) = @_;
   my $nav = $self->_year_nav_data('journal', undef);
   return undef unless $nav;
-  return $self->render_journal_year($nav->{cur_year});
+  return $self->render_journal_year($nav->{cur_year}, canonical => '/journal/');
 }
 
 sub render_journal_year {
-  my ($self, $year) = @_;
+  my ($self, $year, %opt) = @_;
   return undef unless $year && $year =~ /^\d{4}$/;
   my $nav = $self->_year_nav_data('journal', $year);
   return undef unless $nav;
@@ -431,13 +466,19 @@ sub render_journal_year {
       kappa_title => _kappa_title($r->{kappa}),
       };
   }
-  my $vars = $self->base_vars(
+  my $intro_html = $self->_kind_intro_html('journal');
+  my $vars       = $self->base_vars(
     title       => "iczelia :: journal :: $year",
     title_short => 'journal',
     slug        => 'journal',
     page        => {is_journal => 1},
-    data        => {intro_html => $self->_kind_intro_html('journal')},
-    entries     => \@entries,
+    meta        => {
+      canonical => ($opt{canonical} // "/journal/year/$year/"),
+      description => (length $intro_html ? _meta_desc($intro_html)
+        : "Journal entries from $year."),
+    },
+    data    => {intro_html => $intro_html},
+    entries => \@entries,
     %$nav,
   );
   return $self->{template}->render('views/journal.tpl', $vars);
@@ -447,11 +488,11 @@ sub render_blog_index {
   my ($self) = @_;
   my $nav = $self->_year_nav_data('blog', undef);
   return undef unless $nav;
-  return $self->render_blog_year($nav->{cur_year});
+  return $self->render_blog_year($nav->{cur_year}, canonical => '/blog/');
 }
 
 sub render_blog_year {
-  my ($self, $year) = @_;
+  my ($self, $year, %opt) = @_;
   return undef unless $year && $year =~ /^\d{4}$/;
   my $nav = $self->_year_nav_data('blog', $year);
   return undef unless $nav;
@@ -480,13 +521,19 @@ sub render_blog_year {
       kappa_title => _kappa_title($r->{kappa}),
       };
   }
-  my $vars = $self->base_vars(
+  my $intro_html = $self->_kind_intro_html('blog');
+  my $vars       = $self->base_vars(
     title       => "iczelia :: blog :: $year",
     title_short => 'blog',
     slug        => 'blog',
-    page        => {is_blog    => 1},
-    data        => {intro_html => $self->_kind_intro_html('blog')},
-    posts       => \@posts,
+    page        => {is_blog => 1},
+    meta        => {
+      canonical => ($opt{canonical} // "/blog/year/$year/"),
+      description => (length $intro_html ? _meta_desc($intro_html)
+        : "Blog posts from $year."),
+    },
+    data  => {intro_html => $intro_html},
+    posts => \@posts,
     %$nav,
   );
   return $self->{template}->render('views/blog.tpl', $vars);
@@ -502,6 +549,7 @@ sub render_not_found {
     title_short    => '404',
     slug           => '404',
     page           => {is_404 => 1},
+    meta           => {robots => 'noindex,nofollow', description => 'Page not found.'},
     requested_path => $path,
   );
   return $self->{template}->render('views/404.tpl', $vars);
@@ -521,6 +569,7 @@ sub render_updates_full {
   my $vars = $self->base_vars(
     title => 'iczelia :: updates',
     page  => {is_updates => 1},
+    meta  => {canonical => '/updates/', description => 'Site changelog and recent updates.'},
     items => \@items,
   );
   return $self->{template}->render('views/updates.tpl', $vars);
@@ -532,13 +581,18 @@ sub render_tag_page {
   return undef unless $kind eq 'blog' || $kind eq 'journal';
   my $page = $self->{db}->row('SELECT * FROM pages WHERE slug=?', $kind);
   return undef unless $page;
-  my $data = _decode_data($page->{data});
+  my $data       = _decode_data($page->{data});
+  my $intro_html = $self->_md($data->{intro} // '', inline => 0);
   return $self->{template}->render(
     'views/list.tpl',
     $self->base_vars(
       title => "iczelia :: $kind / #$tag",
       page  => {('is_' . $kind) => 1},
-      data  => {intro_html => $self->_md($data->{intro} // '', inline => 0)},
+      meta  => {
+        canonical   => "/$kind/tag/" . _url_seg($tag) . '/',
+        description  => "Posts in $kind tagged '$tag'.",
+      },
+      data       => {intro_html => $intro_html},
       posts      => $self->_post_list($kind, tag => $tag),
       tag_filter => $tag,
       tag_kind   => $kind,
@@ -670,9 +724,47 @@ sub base_vars {
   my %math      = _math_params(\%s);
   my %figure    = _figure_params(\%s);
 
+  # SEO/social <head> metadata. Callers pass `meta => {...}` to
+  # override the website-wide defaults (canonical URL, description,
+  # keywords, og:type, article timestamps, robots, ...). Relative
+  # paths in canonical/image are resolved against site.base_url.
+  my $base_url = $s{site}{base_url} // '';
+  $base_url =~ s{/+$}{};
+  my %meta = (
+    description    => $s{site}{description} // $s{site}{tagline} // '',
+    keywords       => $s{site}{keywords}    // '',
+    canonical      => '',
+    og_type        => 'website',
+    og_title       => '',
+    image          => $s{site}{og_image} // '',
+    published_time => '',
+    modified_time  => '',
+    robots         => '',
+  );
+  if (ref $extra{meta} eq 'HASH') {
+    my $o = delete $extra{meta};
+    %meta = (%meta, %$o);
+  }
+  for my $k (qw(canonical image)) {
+    next unless defined $meta{$k} && $meta{$k} =~ m{^/};
+    $meta{$k} = "$base_url$meta{$k}" if length $base_url;
+  }
+  $meta{og_url} = $meta{canonical} unless defined $meta{og_url};
+  $meta{og_locale} = $s{site}{og_locale} // 'en_US'
+    unless defined $meta{og_locale};
+
+  # og:title: an explicit override, else the page <title> with the
+  # "<site> :: " prefix dropped so it doesn't echo og:site_name.
+  my $site_title = $s{site}{title} // 'iczelia';
+  my $og_title   = $meta{og_title};
+  $og_title = $extra{title} if !defined $og_title || !length $og_title;
+  $og_title = $site_title   if !defined $og_title || !length $og_title;
+  $og_title =~ s/^\Q$site_title\E\s*::\s*//;
+  $meta{og_title} = length $og_title ? $og_title : $site_title;
+
   return {
     site => {
-      base_url         => $s{site}{base_url} // '',
+      base_url         => $base_url,
       copyright        => $copy,
       copyright_short  => $copy_short,
       copyright_author => $copy_author,
@@ -692,9 +784,36 @@ sub base_vars {
       figure    => \%figure,
       math      => \%math,
     },
+    meta => \%meta,
     page => {},
     %extra,
   };
+}
+
+# Plain-text excerpt of rendered HTML, for <meta name="description">
+# and og:description. Strips tags, decodes the handful of entities
+# Markup emits, collapses whitespace, truncates on a word boundary.
+sub _meta_desc {
+  my ($html, $n) = @_;
+  $n ||= 160;
+  return '' unless defined $html && length $html;
+  my $t = $html;
+  $t =~ s{<[^>]+>}{ }g;
+  $t =~ s/&nbsp;/ /g;
+  $t =~ s/&amp;/&/g;
+  $t =~ s/&lt;/</g;
+  $t =~ s/&gt;/>/g;
+  $t =~ s/&quot;/"/g;
+  $t =~ s/&#0*39;|&apos;/'/g;
+  $t =~ s/\s+/ /g;
+  $t =~ s/^\s+//;
+  $t =~ s/\s+$//;
+  if (length $t > $n) {
+    $t = substr($t, 0, $n);
+    $t =~ s/\s+\S*$//;
+    $t .= '...';
+  }
+  return $t;
 }
 
 # Decoy spans (.no-spam / .fake, aria-hidden) feed naive scrapers

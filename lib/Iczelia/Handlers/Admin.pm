@@ -970,7 +970,8 @@ my @SETTINGS_GROUPS = (
   [
     'site', 'site',
     [
-      qw(site.title site.tagline site.author site.email site.base_url
+      qw(site.title site.tagline site.description site.keywords
+        site.og_image site.author site.email site.base_url
         site.copyright site.copyright_start site.copyright_holder)
     ]
   ],

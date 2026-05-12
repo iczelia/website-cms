@@ -5,6 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
+{% include "partials/head-meta.tpl" %}
 <link rel="stylesheet" href="/about.compat.css">
 <link rel="icon" type="image/svg+xml" href="/assets-1024x768/favicon.svg">
 <link rel="alternate icon" href="/favicon.ico">

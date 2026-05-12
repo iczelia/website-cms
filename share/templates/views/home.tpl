@@ -5,6 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
+{% include "partials/head-meta.tpl" %}
 <link rel="stylesheet" href="/style.mobile.compat.css" media="(max-width: 600px) and (min-height: 600px)">
 <link rel="stylesheet" href="/style.600.compat.css" media="(max-height: 599px)">
 <link rel="stylesheet" href="/style.600.compat.css" media="(min-width: 601px) and (max-width: 899px)">
