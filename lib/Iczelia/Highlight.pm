@@ -1089,6 +1089,245 @@ $LANG{markdown} = {
   ],
 };
 
+$LANG{go} = {
+  name    => 'Go',
+  aliases => [qw(go golang)],
+  rules   => [
+    {type => 'com', re => $CCOMMENT_BLOCK},
+    {type => 'com', re => $CCOMMENT_LINE},
+
+    # Raw string literal: `...` (no escapes).
+    {type => 'str', re => qr{ ` [^`]* ` }sx},
+    {type => 'str', re => $CSTR},
+    {type => 'chr', re => $CCHAR},
+    {type => 'num', re => $CNUMBER},
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            break|case|chan|const|continue|default|defer|else|fallthrough|
+            for|func|go|goto|if|import|interface|map|package|range|return|
+            select|struct|switch|type|var
+        )\b}x
+    },
+    {
+      type => 'typ',
+      re   => qr{\b(?:
+            bool|byte|complex64|complex128|error|float32|float64|
+            int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|
+            uint32|uint64|uintptr|any
+        )\b}x
+    },
+    {type => 'cst', re => qr{\b(?:nil|true|false|iota)\b}},
+    {
+      type => 'op',
+      re   =>
+        qr{(?::=|<-|\+\+|--|<<=?|>>=?|&\^=?|\.\.\.|<=|>=|==|!=|&&|\|\||[-+*/%=<>!&|^~]) }x
+    },
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,.:]}},
+    {type => 'id', re => qr{[A-Za-z_]\w*}},
+  ],
+};
+
+$LANG{ruby} = {
+  name    => 'Ruby',
+  aliases => [qw(ruby rb)],
+  rules   => [
+    # Line comment.
+    {type => 'com', re => qr{ \# [^\n]* }x},
+
+    # =begin/=end block comment (must be at column 0).
+    {type => 'com', re => qr{ (?:^|(?<=\n))=begin\b.*?(?:^|(?<=\n))=end\b[^\n]* }sx},
+
+    # Heredoc: <<-NAME / <<~NAME / <<NAME with content up to NAME line.
+    {type => 'str', re => qr{ <<[-~]? ([A-Z_]\w*) [^\n]*\n .*? \n \s* \g{-1} \b }sx},
+
+    # Symbol literal: :name or :"quoted".
+    {type => 'cst', re => qr{ : (?:[A-Za-z_]\w*[!?=]? | "[^"\n]*") }x},
+
+    {type => 'str', re => qr{"(?:[^"\\\n]|\\.)*"}},
+    {type => 'str', re => qr{'(?:[^'\\\n]|\\.)*'}},
+
+    # Regex literal /.../flags.
+    {type => 'str', re => qr{/(?:[^/\\\n]|\\.)+/[imxoesun]*}},
+
+    {type => 'num', re => $CNUMBER},
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            BEGIN|END|alias|and|begin|break|case|class|def|defined|do|else|
+            elsif|end|ensure|for|if|in|module|next|not|or|redo|rescue|retry|
+            return|self|super|then|undef|unless|until|when|while|yield
+        )\b}x
+    },
+    {type => 'cst', re => qr{\b(?:nil|true|false|__FILE__|__LINE__|__dir__)\b}},
+
+    # Instance / class / global variables: @name @@name $name.
+    {type => 'attr', re => qr{ (?:\@\@?|\$) [A-Za-z_]\w* }x},
+
+    {
+      type => 'op',
+      re   => qr{(?:<<|>>|<=|>=|==|!=|<=>|=~|!~|&&|\|\||\.\.\.?|[-+*/%=<>!&|^~?]) }x
+    },
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,.:]}},
+    {type => 'id', re => qr{[A-Za-z_]\w*[!?=]?}},
+  ],
+};
+
+$LANG{haskell} = {
+  name    => 'Haskell',
+  aliases => [qw(haskell hs)],
+  rules   => [
+    # Nested block comment {- ... -} (one level only; nested {- {- -} -}
+    # would need a recursive rule).
+    {type => 'com', re => qr{ \{- .*? -\} }sx},
+
+    # Line comment: -- to EOL, but NOT operator runs like --> or -->>.
+    {type => 'com', re => qr{ (?<![-:!#$%&*+./<=>?@\\^|~]) -- [^\n]* }x},
+
+    # Pragma: {-# ... #-}.
+    {type => 'pre', re => qr{ \{-\# .*? \#-\} }sx},
+
+    {type => 'str', re => qr{ " (?:[^"\\\n]|\\.)* " }x},
+    {type => 'chr', re => qr{ ' (?:[^'\\]|\\.) ' }x},
+    {
+      type => 'num',
+      re   => qr{ \b (?: 0[xX][0-9a-fA-F]+ | 0[oO][0-7]+ | \d+ (?:\.\d+)? (?:[eE][-+]?\d+)? ) \b }x
+    },
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            case|class|data|default|deriving|do|else|family|forall|foreign|
+            hiding|if|import|in|infix|infixl|infixr|instance|let|module|
+            newtype|of|qualified|then|type|where|_
+        )\b}x
+    },
+
+    # Capitalised identifiers are types / data constructors.
+    {type => 'typ', re => qr{ \b [A-Z][\w']* \b }x},
+    {
+      type => 'op',
+      re   => qr{(?:->|=>|<-|::|\.\.|[-:!#$%&*+./<=>?@\\^|~]+) }x
+    },
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,`]}},
+    {type => 'id', re => qr{ \b [a-z_][\w']* \b }x},
+  ],
+};
+
+$LANG{lua} = {
+  name    => 'Lua',
+  aliases => [qw(lua)],
+  rules   => [
+    # Long-bracket block comment: --[[ ... ]] (and --[=[ ... ]=]).
+    {type => 'com', re => qr{ -- \[ (=*) \[ .*? \] \g{-1} \] }sx},
+    {type => 'com', re => qr{ -- [^\n]* }x},
+
+    # Long-bracket string literal: [[ ... ]] / [=[ ... ]=].
+    {type => 'str', re => qr{ \[ (=*) \[ .*? \] \g{-1} \] }sx},
+    {type => 'str', re => qr{ " (?:[^"\\\n]|\\.)* " }x},
+    {type => 'str', re => qr{ ' (?:[^'\\\n]|\\.)* ' }x},
+    {
+      type => 'num',
+      re   => qr{ \b (?: 0[xX][0-9a-fA-F]+ (?:\.[0-9a-fA-F]+)? (?:[pP][-+]?\d+)?
+                | \d+ (?:\.\d+)? (?:[eE][-+]?\d+)? ) \b }x
+    },
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            and|break|do|else|elseif|end|for|function|goto|if|in|local|not|
+            or|repeat|return|then|until|while
+        )\b}x
+    },
+    {type => 'cst', re => qr{\b(?:nil|true|false|self|_G|_ENV)\b}},
+    {
+      type => 'op',
+      re   => qr{(?:\.\.|<<|>>|==|~=|<=|>=|::|[-+*/%=<>!&|^~#]) }x
+    },
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,.:]}},
+    {type => 'id', re => qr{[A-Za-z_]\w*}},
+  ],
+};
+
+$LANG{nix} = {
+  name    => 'Nix',
+  aliases => [qw(nix)],
+  rules   => [
+    {type => 'com', re => qr{ \# [^\n]* }x},
+    {type => 'com', re => qr{ /\* .*? \*/ }sx},
+
+    # Indented string: ''...'' with two-single-quote delimiters.
+    {type => 'str', re => qr{ '' .*? '' }sx},
+    {type => 'str', re => qr{ " (?:[^"\\]|\\.)* " }sx},
+
+    # Path literal: /foo/bar, ./foo, ../foo, ~/foo, <nixpkgs>.
+    {type => 'str', re => qr{ (?: \.{1,2} | ~ )? / [\w./\-]+ }x},
+    {type => 'str', re => qr{ < [\w./\-]+ > }x},
+    {
+      type => 'num',
+      re   => qr{ \b -? \d+ (?:\.\d+)? \b }x
+    },
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            assert|else|if|in|inherit|let|or|rec|then|with
+        )\b}x
+    },
+    {type => 'cst', re => qr{\b(?:true|false|null|builtins)\b}},
+
+    # Attribute-set keys: name = ... (highlights the LHS identifier).
+    {type => 'attr', re => qr{ [A-Za-z_][\w.-]* (?= \s* = (?![=>]) ) }x},
+    {
+      type => 'op',
+      re   => qr{(?:->|//|\?\?|==|!=|<=|>=|&&|\|\||\+\+|[-+*/=<>!@?:]) }x
+    },
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,.]}},
+    {type => 'id', re => qr{[A-Za-z_][\w.-]*}},
+  ],
+};
+
+$LANG{css} = {
+  name    => 'CSS',
+  aliases => [qw(css scss less)],
+  rules   => [
+    {type => 'com', re => $CCOMMENT_BLOCK},
+
+    # Strings (incl. url("...") inner quotes; the unquoted url() body is
+    # caught by the generic identifier rule).
+    {type => 'str', re => qr{ " (?:[^"\\\n]|\\.)* " }x},
+    {type => 'str', re => qr{ ' (?:[^'\\\n]|\\.)* ' }x},
+
+    # At-rules: @media, @keyframes, @import, etc.
+    {type => 'pre', re => qr{ \@ [A-Za-z_-]+ }x},
+
+    # Hex color: #abc / #abcdef / #abcdef00.
+    {type => 'num', re => qr{ \# [0-9A-Fa-f]{3,8} \b }x},
+
+    # Numeric value with optional unit (px, em, %, etc.).
+    {
+      type => 'num',
+      re   => qr{ -? \b \d+ (?:\.\d+)? (?: px|em|rem|ex|ch|vh|vw|vmin|vmax|cm|mm|in|pt|pc|s|ms|deg|rad|turn|fr|% )? \b }x
+    },
+
+    # !important.
+    {type => 'cst', re => qr{ ! \s* important \b }x},
+
+    # Pseudo-class / pseudo-element: :hover, ::before, etc.
+    {type => 'attr', re => qr{ :: [A-Za-z][\w-]* }x},
+    {type => 'attr', re => qr{ : [A-Za-z][\w-]* (?: \([^)]*\) )? }x},
+
+    # Selectors: .class, #id (id already caught as color if 3-8 hex; ok).
+    {type => 'typ',  re => qr{ \. [A-Za-z_-][\w-]* }x},
+    {type => 'mac',  re => qr{ \# [A-Za-z_-][\w-]* }x},
+
+    # Property name: ident followed by colon, but not inside :pseudo.
+    # Tokens like `color:` get caught here; the colon stays as :op.
+    {type => 'kw',   re => qr{ \b [A-Za-z_-][\w-]* (?= \s* : (?! :) ) }x},
+
+    {type => 'op',   re => qr{ [>~+] | \*= | \^= | \$= | \|= | ~= | = }x},
+    {type => 'pn',   re => qr{ [\{\}\[\]\(\);,:] }x},
+    {type => 'id',   re => qr{ [A-Za-z_-][\w-]* }x},
+  ],
+};
+
 $LANG{plain} = {
   name    => 'plain',
   aliases => [qw(plain text txt none plaintext)],
