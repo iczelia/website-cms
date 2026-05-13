@@ -23,7 +23,7 @@ use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/dynamic/',            $gate->(\&_dynamic_list));
   $router->get('/admin/dynamic/new',         $gate->(\&_dynamic_new));
   $router->post('/admin/dynamic/new',        $gate->(\&_dynamic_create));
@@ -34,11 +34,11 @@ sub register {
 
 sub _dynamic_list {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_dynamic_pages;
+  my $rows = $ctx->content->list_dynamic_pages;
   my $sid  = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{updated_fmt} = ts_fmt($r->{updated_at});
-    $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "dynpage:del:$r->{id}");
+    $r->{csrf_del}    = $ctx->auth->csrf_token($sid, "dynpage:del:$r->{id}");
   }
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_dynamic_list.tpl',
@@ -64,13 +64,13 @@ sub _render_dynamic_form {
   my $tpl_opts    = _dynamic_template_options();
   my $current_tpl = $row ? $row->{template} : ($opt{template} || 'generic');
 
-  my $schema = $ctx->{schema}->load($current_tpl);
-  my $data   = $row ? $ctx->{schema}->decode($row->{data}) : {};
+  my $schema = $ctx->schema->load($current_tpl);
+  my $data   = $row ? $ctx->schema->decode($row->{data}) : {};
 
   # On a re-display after a validation error, prefer the user's
   # in-flight params over the persisted row.
   if ($opt{params}) {
-    my ($parsed) = $ctx->{schema}->parse_form($current_tpl, $opt{params});
+    my ($parsed) = $ctx->schema->parse_form($current_tpl, $opt{params});
     $data = $parsed if $parsed;
   }
 
@@ -84,7 +84,7 @@ sub _render_dynamic_form {
     title         => $row ? "edit $row->{route}" : 'new dynamic page',
     row           => $row,
     form_action   => $action,
-    csrf_form     => $ctx->{auth}->csrf_token($sid, $form_name),
+    csrf_form     => $ctx->auth->csrf_token($sid, $form_name),
     template_opts => $tpl_opts,
     current_tpl   => $current_tpl,
     schema        => $schema,
@@ -103,19 +103,19 @@ sub _dynamic_new {
 sub _dynamic_edit {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $row = $ctx->{content}->get_dynamic_page($id)
+  my $row = $ctx->content->get_dynamic_page($id)
     or return Iczelia::HTTP::error(404);
   return _render_dynamic_form($ctx, $req, $row);
 }
 
 sub _dynamic_create {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'dynpage:new');
+  my $err = $ctx->auth->require_csrf($req, 'dynpage:new');
   return $err if $err;
   my $tpl = $req->{params}{template} || 'generic';
-  my ($data, $errs) = $ctx->{schema}->parse_form($tpl, $req->{params});
-  my $data_json = $ctx->{schema}->encode($data);
-  my ($id, $why) = $ctx->{content}->create_dynamic_page(
+  my ($data, $errs) = $ctx->schema->parse_form($tpl, $req->{params});
+  my $data_json = $ctx->schema->encode($data);
+  my ($id, $why) = $ctx->content->create_dynamic_page(
     {
       route    => $req->{params}{route},
       title    => $req->{params}{title},
@@ -137,14 +137,14 @@ sub _dynamic_create {
 sub _dynamic_update {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = $ctx->{auth}->require_csrf($req, "dynpage:$id");
+  my $err = $ctx->auth->require_csrf($req, "dynpage:$id");
   return $err if $err;
-  my $cur = $ctx->{content}->get_dynamic_page($id)
+  my $cur = $ctx->content->get_dynamic_page($id)
     or return Iczelia::HTTP::error(404);
   my $tpl = $req->{params}{template} || $cur->{template};
-  my ($data, $errs) = $ctx->{schema}->parse_form($tpl, $req->{params});
-  my $data_json = $ctx->{schema}->encode($data);
-  my ($_id, $why) = $ctx->{content}->update_dynamic_page(
+  my ($data, $errs) = $ctx->schema->parse_form($tpl, $req->{params});
+  my $data_json = $ctx->schema->encode($data);
+  my ($_id, $why) = $ctx->content->update_dynamic_page(
     $id,
     {
       route    => $req->{params}{route},
@@ -168,9 +168,9 @@ sub _dynamic_update {
 sub _dynamic_delete {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = $ctx->{auth}->require_csrf($req, "dynpage:del:$id");
+  my $err = $ctx->auth->require_csrf($req, "dynpage:del:$id");
   return $err if $err;
-  $ctx->{content}->delete_dynamic_page($id);
+  $ctx->content->delete_dynamic_page($id);
   return Iczelia::HTTP::redirect('/admin/dynamic/');
 }
 

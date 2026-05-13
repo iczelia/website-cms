@@ -43,7 +43,7 @@ $c->create_post('blog',
   {title => 'p3', body => 'hi', date => '2026-05-09', tags => 'b, c'});
 
 # Tag listing for 'a' has p1 + p2.
-my $list = Iczelia::Render::_post_list($r, 'blog', tag => 'a');
+my $list = $r->_post_list('blog', tag => 'a');
 is(scalar(@$list), 2, 'tag a yields two posts');
 my @titles = map {$_->{title}} @$list;
 is_deeply([sort @titles], ['p1', 'p2'], 'tag a posts are p1 + p2');

@@ -63,24 +63,24 @@ sub register {
 
 # Public so Backup / Guestbook / Analytics can hang their admin routes
 # off the same gate without reaching for private symbols.
-sub gate {my ($fn, $ctx, @r) = @_; $ctx->{auth}->gate($fn, $ctx, @r)}
+sub gate {my ($fn, $ctx, @r) = @_; $ctx->auth->gate($fn, $ctx, @r)}
 
 sub _csrf_or_400 {
   my ($ctx, $req, $form) = @_;
-  $ctx->{auth}->require_csrf($req, $form);
+  $ctx->auth->require_csrf($req, $form);
 }
 
 sub render_admin {
   my ($ctx, $req, $tpl, %extra) = @_;
   return Iczelia::HTTP::html(
-    $ctx->{template}->render("views/$tpl", admin_vars($ctx, $req, %extra))
+    $ctx->template->render("views/$tpl", admin_vars($ctx, $req, %extra))
   );
 }
 
 sub admin_vars {
   my ($ctx, $req, %extra) = @_;
   my $sid     = $req->{auth_sid};
-  my $pending = $ctx->{db}->one(
+  my $pending = $ctx->db->one(
     q{SELECT COUNT(*) FROM guestbook_entries
           WHERE approved_at IS NULL AND rejected_at IS NULL}
   );
@@ -91,13 +91,13 @@ sub admin_vars {
   my $csrf_extra = delete $extra{csrf_extra} || {};
 
   my $csrf_hash = {
-    logout               => $ctx->{auth}->csrf_token($sid, 'logout'),
-    upload               => $ctx->{auth}->csrf_token($sid, 'upload'),
-    preview              => $ctx->{auth}->csrf_token($sid, 'preview'),
-    cache_drop           => $ctx->{auth}->csrf_token($sid, 'cache:drop'),
-    cache_rebuild        => $ctx->{auth}->csrf_token($sid, 'cache:rebuild'),
+    logout               => $ctx->auth->csrf_token($sid, 'logout'),
+    upload               => $ctx->auth->csrf_token($sid, 'upload'),
+    preview              => $ctx->auth->csrf_token($sid, 'preview'),
+    cache_drop           => $ctx->auth->csrf_token($sid, 'cache:drop'),
+    cache_rebuild        => $ctx->auth->csrf_token($sid, 'cache:rebuild'),
     cache_rebuild_cancel =>
-      $ctx->{auth}->csrf_token($sid, 'cache:rebuild-cancel'),
+      $ctx->auth->csrf_token($sid, 'cache:rebuild-cancel'),
     %$csrf_extra,
   };
   return {
@@ -113,12 +113,12 @@ sub admin_vars {
 
 sub _login_form {
   my ($ctx, $req) = @_;
-  my ($u) = $ctx->{auth}->current_user($req);
+  my ($u) = $ctx->auth->current_user($req);
   return Iczelia::HTTP::redirect('/admin/') if $u;
 
   my ($cookie_value, $set) =
-    $ctx->{auth}->anon_csrf_cookie($req->{cookies}{iczelia_csrf});
-  my $token = $ctx->{auth}->anon_csrf_token($cookie_value, 'login');
+    $ctx->auth->anon_csrf_cookie($req->{cookies}{iczelia_csrf});
+  my $token = $ctx->auth->anon_csrf_token($cookie_value, 'login');
 
   my $err = $req->{qparams}{e} // '';
   my $msg =
@@ -126,7 +126,7 @@ sub _login_form {
     : $err eq 'thr' ? 'too many attempts; try later'
     : $err eq 'err' ? 'something went wrong'
     :                 undef;
-  my $html = $ctx->{template}->render(
+  my $html = $ctx->template->render(
     'views/admin_login.tpl',
     {
       title => 'login',
@@ -165,9 +165,9 @@ sub _login_submit {
   my $cookie = $req->{cookies}{iczelia_csrf} // '';
   my $token  = $params->{csrf}               // '';
   return Iczelia::HTTP::error(400, 'csrf')
-    unless $ctx->{auth}->verify_anon_csrf($cookie, 'login', $token);
+    unless $ctx->auth->verify_anon_csrf($cookie, 'login', $token);
 
-  my ($sid, $err) = $ctx->{auth}->login(
+  my ($sid, $err) = $ctx->auth->login(
     $params->{username} // '',
     $params->{password} // '',
     $req->{remote} || '?'
@@ -180,27 +180,27 @@ sub _login_submit {
     return Iczelia::HTTP::redirect("/admin/login?e=$code");
   }
   my $resp = Iczelia::HTTP::redirect('/admin/');
-  $resp->{cookies} = [$ctx->{auth}->session_cookie($sid, $req)];
+  $resp->{cookies} = [$ctx->auth->session_cookie($sid, $req)];
   return $resp;
 }
 
 sub _logout {
   my ($ctx, $req) = @_;
-  my ($u,   $sid) = $ctx->{auth}->current_user($req);
+  my ($u,   $sid) = $ctx->auth->current_user($req);
   if ($u) {
-    my $expected = $ctx->{auth}->csrf_token($sid, 'logout');
+    my $expected = $ctx->auth->csrf_token($sid, 'logout');
     if (($req->{params}{csrf} // '') eq $expected) {
-      $ctx->{auth}->logout($sid);
+      $ctx->auth->logout($sid);
     }
   }
   my $resp = Iczelia::HTTP::redirect('/admin/login');
-  $resp->{cookies} = [$ctx->{auth}->session_cookie('', $req)];
+  $resp->{cookies} = [$ctx->auth->session_cookie('', $req)];
   return $resp;
 }
 
 sub _dashboard {
   my ($ctx, $req) = @_;
-  my $db = $ctx->{db};
+  my $db = $ctx->db;
   my ($pages, $blog, $journal) = _dashboard_lists($db);
   return render_admin(
     $ctx, $req, 'admin_dashboard.tpl',
@@ -213,7 +213,7 @@ sub _dashboard {
     flash      => _dashboard_flash($req),
     csrf_extra => {
       search_rebuild =>
-        $ctx->{auth}->csrf_token($req->{auth_sid}, 'search:rebuild'),
+        $ctx->auth->csrf_token($req->{auth_sid}, 'search:rebuild'),
     },
   );
 }
@@ -297,7 +297,7 @@ sub _search_rebuild {
   my ($ctx, $req) = @_;
   my $err = _csrf_or_400($ctx, $req, 'search:rebuild');
   return $err if $err;
-  eval {$ctx->{db}->do_(q{INSERT INTO posts_fts(posts_fts) VALUES('rebuild')})};
+  eval {$ctx->db->do_(q{INSERT INTO posts_fts(posts_fts) VALUES('rebuild')})};
   return Iczelia::HTTP::redirect('/admin/?msg=search-rebuilt');
 }
 

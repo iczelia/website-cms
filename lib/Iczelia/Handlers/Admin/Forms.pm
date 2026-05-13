@@ -129,7 +129,7 @@ sub simple_form_render {
   $vars->{form_action} = $arg{action};
   $vars->{form_csrf}   = $arg{csrf};
   $vars->{form_body}   = $arg{body};
-  return $ctx->{template}->render('views/admin_simple_form.tpl', $vars);
+  return $ctx->template->render('views/admin_simple_form.tpl', $vars);
 }
 
 sub kvtable_rows_from_params {

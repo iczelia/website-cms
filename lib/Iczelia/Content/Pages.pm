@@ -14,11 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Pages;
 use strict;
 use warnings;
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: page CRUD. Pulled into the leaf
+# Iczelia::Content via @ISA. $self is an Iczelia::Content instance.
 # Provides: get_page, save_page.
 # Reads $self slots: db, render.
 

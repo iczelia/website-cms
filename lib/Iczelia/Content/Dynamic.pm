@@ -14,11 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Dynamic;
 use strict;
 use warnings;
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: admin-defined dynamic pages. Pulled into
+# the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
+# instance.
 # Provides: validate_dynamic_route, list_dynamic_pages, get_dynamic_page,
 #   get_dynamic_page_by_route, create_dynamic_page, update_dynamic_page,
 #   delete_dynamic_page, _validate_template.

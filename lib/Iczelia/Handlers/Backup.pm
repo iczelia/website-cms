@@ -39,7 +39,7 @@ my $JSON = JSON::PP->new->utf8(1)->canonical(1)->pretty(1);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/backup/', $gate->(\&_form));
   $router->post('/admin/backup/export', $gate->(\&_export));
   $router->post('/admin/backup/import', $gate->(\&_import));
@@ -54,9 +54,9 @@ sub _form {
     $ctx, $req, 'admin_backup.tpl',
     title => 'backup / wipe',
     csrf  => {
-      export => $ctx->{auth}->csrf_token($sid, 'backup:export'),
-      import => $ctx->{auth}->csrf_token($sid, 'backup:import'),
-      wipe   => $ctx->{auth}->csrf_token($sid, 'backup:wipe'),
+      export => $ctx->auth->csrf_token($sid, 'backup:export'),
+      import => $ctx->auth->csrf_token($sid, 'backup:import'),
+      wipe   => $ctx->auth->csrf_token($sid, 'backup:wipe'),
     },
     flash => $req->{qparams}{msg}
     ? {kind => 'ok', text => $req->{qparams}{msg}}
@@ -66,10 +66,10 @@ sub _form {
 
 sub _export {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'backup:export');
+  my $err = $ctx->auth->require_csrf($req, 'backup:export');
   return $err if $err;
 
-  my $tmp_dir = $ctx->{cfg}{'tmp-dir'} || '/tmp';
+  my $tmp_dir = $ctx->cfg->{'tmp-dir'} || '/tmp';
   make_path($tmp_dir) unless -d $tmp_dir;
   my $stamp = _date_stamp();
   my $work  = "$tmp_dir/iczelia-export-$stamp.$$";
@@ -77,7 +77,7 @@ sub _export {
 
   my $snap = "$work/site.db";
   eval {
-    $ctx->{db}->dbh->do(q{VACUUM INTO ?}, undef, $snap);
+    $ctx->db->dbh->do(q{VACUUM INTO ?}, undef, $snap);
     my $tdb = DBI->connect("dbi:SQLite:dbname=$snap", '', '',
       {RaiseError => 1, PrintError => 0, AutoCommit => 1});
     eval {$tdb->do("DELETE FROM $_")} for @EPHEMERAL_TABLES;
@@ -89,7 +89,7 @@ sub _export {
     return Iczelia::HTTP::error(500, "snapshot failed: $@");
   };
 
-  my $media_src = $ctx->{cfg}{'media-dir'};
+  my $media_src = $ctx->cfg->{'media-dir'};
   my $media_dst = "$work/media";
   make_path($media_dst);
   my @media_files = _list_dir_files($media_src);
@@ -195,13 +195,13 @@ sub _archive_paths_safe {
 
 sub _import {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'backup:import');
+  my $err = $ctx->auth->require_csrf($req, 'backup:import');
   return $err if $err;
   my @files = @{$req->{uploads} || []};
   return Iczelia::HTTP::error(400, 'no file') unless @files;
   my $f = $files[0];
 
-  my $tmp_dir = $ctx->{cfg}{'tmp-dir'} || '/tmp';
+  my $tmp_dir = $ctx->cfg->{'tmp-dir'} || '/tmp';
   make_path($tmp_dir) unless -d $tmp_dir;
   my $work = "$tmp_dir/iczelia-import.$$";
   make_path($work);
@@ -238,8 +238,8 @@ sub _import {
     return Iczelia::HTTP::error(400, 'archive failed validation');
   }
 
-  my $live_path = $ctx->{db}{path};
-  eval {$ctx->{db}->disconnect};
+  my $live_path = $ctx->db->{path};
+  eval {$ctx->db->disconnect};
   move($live_path, "$live_path.preimport") if -f $live_path;
   unless (move($snap, $live_path)) {
     my $err = "$!";
@@ -248,10 +248,10 @@ sub _import {
       if -e "$live_path.preimport";
     return Iczelia::HTTP::error(500, "rename: $err");
   }
-  eval {$ctx->{db}->reconnect};
+  eval {$ctx->db->reconnect};
 
   my $media_src = "$work/media";
-  my $media_dst = $ctx->{cfg}{'media-dir'};
+  my $media_dst = $ctx->cfg->{'media-dir'};
   if ($media_dst && -d $media_src) {
     make_path($media_dst) unless -d $media_dst;
     if (opendir my $dh, $media_dst) {
@@ -272,7 +272,7 @@ sub _import {
   }
 
   remove_tree($work);
-  eval {$ctx->{render}->invalidate_all};
+  eval {$ctx->render->invalidate_all};
   return Iczelia::HTTP::redirect('/admin/backup/?msg=imported');
 }
 
@@ -281,21 +281,21 @@ sub _wipe {
   if (my $reject = _wipe_validate_request($ctx, $req)) {
     return $reject;
   }
-  my $share = $ctx->{cfg}{'share-dir'}
+  my $share = $ctx->cfg->{'share-dir'}
     or return Iczelia::HTTP::error(500, 'share-dir not configured');
-  my $auth_dump = $ctx->{db}->all('SELECT * FROM auth');
+  my $auth_dump = $ctx->db->all('SELECT * FROM auth');
 
   # PRAGMA must be set outside any transaction; tx_immediate wraps the
   # wipe sequence. Operator must quiesce traffic first (admin UI says
   # so); sibling workers will hit table-not-found.
-  $ctx->{db}->dbh->do('PRAGMA foreign_keys = OFF');
+  $ctx->db->dbh->do('PRAGMA foreign_keys = OFF');
   my $err = _wipe_apply_schema($ctx, $share, $auth_dump);
-  $ctx->{db}->dbh->do('PRAGMA foreign_keys = ON');
+  $ctx->db->dbh->do('PRAGMA foreign_keys = ON');
   if (defined $err) {
     warn "wipe failed: $err";
     return Iczelia::HTTP::error(500, "wipe failed: $err");
   }
-  eval {$ctx->{render}->invalidate_all};
+  eval {$ctx->render->invalidate_all};
   _wipe_audit($ctx, $req);
   return Iczelia::HTTP::redirect('/admin/backup/?msg=wiped');
 }
@@ -304,7 +304,7 @@ sub _wipe {
 # Returns a redirect / error response on failure, undef on success.
 sub _wipe_validate_request {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'backup:wipe');
+  my $err = $ctx->auth->require_csrf($req, 'backup:wipe');
   return $err if $err;
   my $p = $req->{params};
   my @missing;
@@ -312,10 +312,10 @@ sub _wipe_validate_request {
   push @missing, 'confirm2' unless $p->{confirm2};
   push @missing, 'confirm3' unless $p->{confirm3};
   push @missing, 'phrase'   unless ($p->{phrase} // '') eq 'WIPE THIS SITE';
-  my $auth_row = $ctx->{db}
+  my $auth_row = $ctx->db
     ->row('SELECT pwhash FROM auth WHERE username=?', $req->{auth_user});
   if (!$auth_row
-    || !$ctx->{auth}->verify_password($p->{password} // '', $auth_row->{pwhash}))
+    || !$ctx->auth->verify_password($p->{password} // '', $auth_row->{pwhash}))
   {
     push @missing, 'password';
   }
@@ -329,7 +329,7 @@ sub _wipe_validate_request {
 sub _wipe_apply_schema {
   my ($ctx, $share, $auth_dump) = @_;
   my $ok = eval {
-    $ctx->{db}->tx_immediate(
+    $ctx->db->tx_immediate(
       sub {
         my $d      = shift;
         my $tables = $d->col(
@@ -362,7 +362,7 @@ sub _wipe_apply_schema {
 sub _wipe_audit {
   my ($ctx, $req) = @_;
   eval {
-    $ctx->{db}->do_(
+    $ctx->db->do_(
       q{INSERT INTO analytics_events(ts, path, status, method,
             visitor_hash, referer_host, ua_class)
         VALUES(strftime('%s','now'), '/admin/wipe/', 200, 'POST',

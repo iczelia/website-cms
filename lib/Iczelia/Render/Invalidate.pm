@@ -14,15 +14,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Render;
+package Iczelia::Render::Invalidate;
 use strict;
 use warnings;
 
-# Iczelia::Render fragment. Full package layout in Render.pm.
+# Iczelia::Render mixin: cache-bust helpers. Pulled into the leaf
+# Iczelia::Render via @ISA. $self is an Iczelia::Render instance.
 # Provides: invalidate_page, invalidate_post, invalidate_home,
-#   invalidate_route, invalidate_all; private helper _bust_for_page.
+#   invalidate_route, invalidate_all; private _bust_for_page.
 # Reads $self slots: db, cache.
-# Calls cross-file helpers: none.
 
 sub invalidate_page {
   my ($self, $slug) = @_;

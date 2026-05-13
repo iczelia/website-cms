@@ -27,7 +27,7 @@ use constant PGP_BODY_MAX => 256 * 1024;
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/pgp/',         $gate->(\&_pgp_form));
   $router->post('/admin/pgp/',        $gate->(\&_pgp_upload));
   $router->post('/admin/pgp/delete',  $gate->(\&_pgp_delete));
@@ -36,7 +36,7 @@ sub register {
 sub _pgp_path {
   my ($ctx) = @_;
   require Iczelia::Handlers::Static;
-  return Iczelia::Handlers::Static::var_dir_of($ctx->{cfg}) . '/pub.pgp';
+  return Iczelia::Handlers::Static::var_dir_of($ctx->cfg) . '/pub.pgp';
 }
 
 sub _pgp_form {
@@ -51,14 +51,14 @@ sub _pgp_form {
     has_key          => $size ? 1 : 0,
     key_size         => $size,
     key_uploaded_fmt => $size ? ts_fmt($mtime) : '',
-    csrf_upload      => $ctx->{auth}->csrf_token($sid, 'pgp'),
-    csrf_delete      => $ctx->{auth}->csrf_token($sid, 'pgp:delete'),
+    csrf_upload      => $ctx->auth->csrf_token($sid, 'pgp'),
+    csrf_delete      => $ctx->auth->csrf_token($sid, 'pgp:delete'),
   );
 }
 
 sub _pgp_upload {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'pgp');
+  my $err = $ctx->auth->require_csrf($req, 'pgp');
   return $err if $err;
 
   my @files = @{$req->{uploads} || []};
@@ -92,7 +92,7 @@ sub _pgp_upload {
 
 sub _pgp_delete {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'pgp:delete');
+  my $err = $ctx->auth->require_csrf($req, 'pgp:delete');
   return $err if $err;
   my $path = _pgp_path($ctx);
   unlink $path if -e $path;

@@ -14,11 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Activity;
 use strict;
 use warnings;
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: activity rows + the updates list. Pulled
+# into the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
+# instance.
 # Provides: list_activity, list_updates, replace_updates, set_currently.
 # Reads $self slots: db, render.
 

@@ -23,7 +23,7 @@ use Iczelia::Time      qw(ts_fmt);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/highlight/',           $gate->(\&_lang_list));
   $router->get('/admin/highlight/new',        $gate->(\&_lang_new));
   $router->post('/admin/highlight/new',       $gate->(\&_lang_create));
@@ -34,11 +34,11 @@ sub register {
 
 sub _lang_list {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_langs;
+  my $rows = $ctx->content->list_langs;
   my $sid  = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{updated_fmt} = ts_fmt($r->{updated_at});
-    $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "lang:del:$r->{id}");
+    $r->{csrf_del}    = $ctx->auth->csrf_token($sid, "lang:del:$r->{id}");
   }
   my @builtins = Iczelia::Highlight::languages();
   return Iczelia::Handlers::Admin::render_admin(
@@ -86,7 +86,7 @@ sub _render_lang_form {
     title       => $row ? "edit $row->{name}" : 'new language',
     row         => $row,
     form_action => $action,
-    csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
+    csrf_form   => $ctx->auth->csrf_token($sid, $form_name),
     error       => $opt{error},
     rec         => $rec,
   );
@@ -100,16 +100,16 @@ sub _lang_new {
 sub _lang_edit {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $row = $ctx->{content}->get_lang($id)
+  my $row = $ctx->content->get_lang($id)
     or return Iczelia::HTTP::error(404);
   return _render_lang_form($ctx, $req, $row);
 }
 
 sub _lang_create {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'lang:new');
+  my $err = $ctx->auth->require_csrf($req, 'lang:new');
   return $err if $err;
-  my ($id, $why) = $ctx->{content}->create_lang($req->{params});
+  my ($id, $why) = $ctx->content->create_lang($req->{params});
   if (!$id) {
     return _render_lang_form(
       $ctx, $req, undef,
@@ -123,11 +123,11 @@ sub _lang_create {
 sub _lang_update {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = $ctx->{auth}->require_csrf($req, "lang:$id");
+  my $err = $ctx->auth->require_csrf($req, "lang:$id");
   return $err if $err;
-  my $cur = $ctx->{content}->get_lang($id)
+  my $cur = $ctx->content->get_lang($id)
     or return Iczelia::HTTP::error(404);
-  my ($_id, $why) = $ctx->{content}->update_lang($id, $req->{params});
+  my ($_id, $why) = $ctx->content->update_lang($id, $req->{params});
   if ($why) {
     return _render_lang_form(
       $ctx, $req, $cur,
@@ -141,9 +141,9 @@ sub _lang_update {
 sub _lang_delete {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = $ctx->{auth}->require_csrf($req, "lang:del:$id");
+  my $err = $ctx->auth->require_csrf($req, "lang:del:$id");
   return $err if $err;
-  $ctx->{content}->delete_lang($id);
+  $ctx->content->delete_lang($id);
   return Iczelia::HTTP::redirect('/admin/highlight/');
 }
 

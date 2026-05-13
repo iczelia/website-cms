@@ -23,7 +23,7 @@ use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/edit/:slug',  $gate->(\&_edit_page));
   $router->post('/admin/edit/:slug', $gate->(\&_save_page));
 }
@@ -31,16 +31,16 @@ sub register {
 sub _edit_page {
   my ($ctx, $req) = @_;
   my $slug = $req->{caps}{slug};
-  my $page = $ctx->{content}->get_page($slug)
+  my $page = $ctx->content->get_page($slug)
     or return Iczelia::HTTP::error(404, 'no such page');
 
-  my $sch = eval {$ctx->{schema}->load($page->{template})}
+  my $sch = eval {$ctx->schema->load($page->{template})}
     or return Iczelia::HTTP::error(500,
     "no schema for template '$page->{template}'");
 
-  my $data = $ctx->{schema}->decode($page->{data});
+  my $data = $ctx->schema->decode($page->{data});
   my $sid  = $req->{auth_sid};
-  my $csrf = $ctx->{auth}->csrf_token($sid, "page:$slug");
+  my $csrf = $ctx->auth->csrf_token($sid, "page:$slug");
 
   my @fields;
   for my $f (@{$sch->{fields}}) {
@@ -63,15 +63,15 @@ sub _edit_page {
 sub _save_page {
   my ($ctx, $req) = @_;
   my $slug = $req->{caps}{slug};
-  my $page = $ctx->{content}->get_page($slug)
+  my $page = $ctx->content->get_page($slug)
     or return Iczelia::HTTP::error(404);
-  my $err = $ctx->{auth}->require_csrf($req, "page:$slug");
+  my $err = $ctx->auth->require_csrf($req, "page:$slug");
   return $err if $err;
 
   my ($data, $errs) =
-    $ctx->{schema}->parse_form($page->{template}, $req->{params});
-  my $json = $ctx->{schema}->encode($data);
-  $ctx->{content}->save_page($slug, $page->{title}, $page->{template}, $json);
+    $ctx->schema->parse_form($page->{template}, $req->{params});
+  my $json = $ctx->schema->encode($data);
+  $ctx->content->save_page($slug, $page->{title}, $page->{template}, $json);
   return Iczelia::HTTP::redirect('/admin/');
 }
 

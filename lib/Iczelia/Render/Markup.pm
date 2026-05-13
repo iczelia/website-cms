@@ -14,17 +14,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Render;
+package Iczelia::Render::Markup;
 use strict;
 use warnings;
 use Iczelia::Markup ();
 use Iczelia::Util   ();
 
-# Iczelia::Render fragment. Full package layout in Render.pm.
-# Provides: _md, _meta_desc (and helper _para_with_text),
+# Iczelia::Render mixin: markdown -> HTML helpers. Pulled into the
+# leaf Iczelia::Render via @ISA. $self is an Iczelia::Render instance.
+# Provides: _md, _meta_desc (and private _para_with_text),
 #   _cook_page_data, substitute_math.
 # Reads $self slots: tex (via substitute_math).
-# Calls cross-file helpers: none.
 
 my $INTRO_HEADING_RE = qr{
   \A \s* (?: \d+ [.)]? \s+ )?

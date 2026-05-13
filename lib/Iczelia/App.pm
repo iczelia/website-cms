@@ -30,6 +30,7 @@ use Iczelia::Schema;
 use Iczelia::Content;
 use Iczelia::Highlight;
 use Iczelia::Warmer;
+use Iczelia::Context;
 use Iczelia::Handlers::Public;
 use Iczelia::Handlers::Admin;
 use Iczelia::Handlers::Guestbook;
@@ -75,7 +76,7 @@ sub build {
   my $content = Iczelia::Content->new(db => $db, render => $rnd);
 
   my $router = Iczelia::Router->new;
-  my $ctx    = {
+  my $ctx    = Iczelia::Context->new(
     cfg      => $cfg,
     db       => $db,
     template => $tpl,
@@ -85,7 +86,7 @@ sub build {
     fetcher  => $fetcher,
     schema   => $schema,
     content  => $content,
-  };
+  );
   Iczelia::Handlers::Static->register($router, $ctx);
   Iczelia::Handlers::Honeypot->register($router, $ctx);
   Iczelia::Handlers::Feeds->register($router, $ctx);

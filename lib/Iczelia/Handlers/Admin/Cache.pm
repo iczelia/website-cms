@@ -41,7 +41,7 @@ use constant {
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->post('/admin/cache/drop',           $gate->(\&_cache_drop));
   $router->post('/admin/cache/rebuild',        $gate->(\&_cache_rebuild));
   $router->post('/admin/cache/rebuild/cancel', $gate->(\&_cache_rebuild_cancel));
@@ -50,9 +50,9 @@ sub register {
 
 sub _cache_drop {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'cache:drop');
+  my $err = $ctx->auth->require_csrf($req, 'cache:drop');
   return $err if $err;
-  my $db = $ctx->{db};
+  my $db = $ctx->db;
   $db->tx(
     sub {
       my $d = shift;
@@ -72,13 +72,13 @@ sub _cache_drop {
 # wipes the inherited state.
 sub _cache_rebuild {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'cache:rebuild');
+  my $err = $ctx->auth->require_csrf($req, 'cache:rebuild');
   return $err if $err;
   require POSIX;
 
   my $scope = ($req->{params}{scope} // '') eq 'html' ? 'html' : 'all';
 
-  my $db   = $ctx->{db};
+  my $db   = $ctx->db;
   my $busy = rebuild_state($db);
   if ($busy->{phase} =~ /^(?:starting|math|html|cancelling)$/) {
     return Iczelia::HTTP::redirect('/admin/?rebuilding=1');
@@ -93,7 +93,7 @@ sub _cache_rebuild {
   $db->set_setting(REBUILD_ERROR,       '');
   $db->set_setting(REBUILD_PID,         0);
 
-  my $cfg         = $ctx->{cfg};
+  my $cfg         = $ctx->cfg;
   my $config_path = $cfg->{_config_path};
   if (!$config_path || !-r $config_path) {
     $db->set_setting(REBUILD_PHASE, 'error');
@@ -137,9 +137,9 @@ sub _rebuild_bin_path {
 
 sub _cache_rebuild_cancel {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'cache:rebuild-cancel');
+  my $err = $ctx->auth->require_csrf($req, 'cache:rebuild-cancel');
   return $err if $err;
-  my $db    = $ctx->{db};
+  my $db    = $ctx->db;
   my $state = rebuild_state($db);
   if ($state->{phase} !~ /^(?:starting|math|html|cancelling)$/) {
     return Iczelia::HTTP::redirect('/admin/');
@@ -188,7 +188,7 @@ sub rebuild_state {
 
 sub _cache_rebuild_status {
   my ($ctx, $req) = @_;
-  my $s = rebuild_state($ctx->{db});
+  my $s = rebuild_state($ctx->db);
   return {
     status    => 200,
     headers   => {'Content-Type' => 'application/json; charset=utf-8'},

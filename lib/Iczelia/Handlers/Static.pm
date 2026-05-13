@@ -59,7 +59,7 @@ my %CT = (
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $cfg    = $ctx->{cfg};
+  my $cfg    = $ctx->cfg;
   my $share  = $cfg->{'share-dir'};
   my $chrome = $cfg->{'chrome-dir'};
   my $media  = $cfg->{'media-dir'};

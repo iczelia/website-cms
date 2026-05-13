@@ -27,7 +27,7 @@ my $BOMB;
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  $BOMB = _load_bomb($ctx->{cfg}{'share-dir'}) unless defined $BOMB;
+  $BOMB = _load_bomb($ctx->cfg->{'share-dir'}) unless defined $BOMB;
   $router->get($_, \&_serve) for @PATHS;
 }
 

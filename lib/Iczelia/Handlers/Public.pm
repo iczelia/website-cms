@@ -54,7 +54,7 @@ sub register {
 
 sub _home {
   my ($ctx, $req) = @_;
-  my $html = $ctx->{render}->render_home;
+  my $html = $ctx->render->render_home;
   my $resp = Iczelia::HTTP::html($html,
     headers => {'Cache-Control' => 'no-store'});
   $resp->{_no_cache} = 1;
@@ -70,20 +70,20 @@ sub _page {
       $opt{tag} = $t;
     }
   }
-  my $html = $ctx->{render}->render_page($slug, %opt);
+  my $html = $ctx->render->render_page($slug, %opt);
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
 
 sub _updates {
   my ($ctx) = @_;
-  my $html = $ctx->{render}->render_updates_full;
+  my $html = $ctx->render->render_updates_full;
   return Iczelia::HTTP::html($html);
 }
 
 sub _journal_index {
   my ($ctx) = @_;
-  my $html = $ctx->{render}->render_journal_index;
+  my $html = $ctx->render->render_journal_index;
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
@@ -93,14 +93,14 @@ sub _journal_year {
   my $year = $req->{caps}{year};
   return Iczelia::HTTP::error(404)
     unless defined $year && $year =~ /^\d{4}$/;
-  my $html = $ctx->{render}->render_journal_year($year);
+  my $html = $ctx->render->render_journal_year($year);
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
 
 sub _blog_index {
   my ($ctx) = @_;
-  my $html = $ctx->{render}->render_blog_index;
+  my $html = $ctx->render->render_blog_index;
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
@@ -110,7 +110,7 @@ sub _blog_year {
   my $year = $req->{caps}{year};
   return Iczelia::HTTP::error(404)
     unless defined $year && $year =~ /^\d{4}$/;
-  my $html = $ctx->{render}->render_blog_year($year);
+  my $html = $ctx->render->render_blog_year($year);
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
@@ -118,12 +118,12 @@ sub _blog_year {
 sub _post {
   my ($ctx, $kind, $req) = @_;
   my $slug = $req->{caps}{slug};
-  my $html = $ctx->{render}->render_post($kind, $slug);
+  my $html = $ctx->render->render_post($kind, $slug);
   if (!defined $html) {
 
     # If the slug was renamed, the alias table maps it to the
     # current canonical slug; 301 to the live URL.
-    my $row = $ctx->{db}->row(
+    my $row = $ctx->db->row(
       q{SELECT p.slug FROM post_aliases a
                 JOIN posts p ON p.id = a.post_id
                WHERE a.kind=? AND a.from_slug=?
@@ -145,7 +145,7 @@ sub _posts_alias {
   my ($ctx, $req) = @_;
   my $slug = $req->{caps}{slug};
   return Iczelia::HTTP::error(404) unless defined $slug && length $slug;
-  my $row = $ctx->{db}->row(
+  my $row = $ctx->db->row(
     q{SELECT kind FROM posts WHERE slug=? AND draft=0
             AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
           ORDER BY (kind='blog') DESC LIMIT 1}, $slug
@@ -153,7 +153,7 @@ sub _posts_alias {
   if ($row) {
     return Iczelia::HTTP::redirect("/$row->{kind}/$slug/", status => 301);
   }
-  my $aliased = $ctx->{db}->row(
+  my $aliased = $ctx->db->row(
     q{SELECT a.kind, p.slug FROM post_aliases a
             JOIN posts p ON p.id = a.post_id
            WHERE a.from_slug=? AND p.draft=0
@@ -182,7 +182,7 @@ sub _search {
   if (@tok) {
     my $match = join ' ', map {qq{"$_"}} @tok;
     my $rows  = eval {
-      $ctx->{db}->all(
+      $ctx->db->all(
         q{SELECT slug, kind, title,
                          snippet(posts_fts, 3, '<mark>', '</mark>', '...', 24) AS sn,
                          bm25(posts_fts) AS rank
@@ -196,9 +196,9 @@ sub _search {
     @results = @$rows;
   }
   return Iczelia::HTTP::html(
-    $ctx->{template}->render(
+    $ctx->template->render(
       'views/search.tpl',
-      $ctx->{render}->base_vars(
+      $ctx->render->base_vars(
         title => 'iczelia :: search',
         meta  => {
           robots      => 'noindex,follow',
@@ -214,7 +214,7 @@ sub _search {
 
 sub _tag_index {
   my ($ctx, $kind) = @_;
-  my $rows = $ctx->{db}->all(
+  my $rows = $ctx->db->all(
     q{SELECT tags FROM posts
            WHERE kind=? AND draft=0
              AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))},
@@ -231,7 +231,7 @@ sub _tag_index {
     },
     sort {$count{$b} <=> $count{$a} || $a cmp $b}
     keys %count;
-  my $vars = $ctx->{render}->base_vars(
+  my $vars = $ctx->render->base_vars(
     title => "iczelia :: $kind tags",
     meta  => {
       canonical   => "/$kind/tags/",
@@ -241,7 +241,7 @@ sub _tag_index {
     tags => \@list,
   );
   return Iczelia::HTTP::html(
-    $ctx->{template}->render('views/tag_index.tpl', $vars));
+    $ctx->template->render('views/tag_index.tpl', $vars));
 }
 
 sub _tag_page {
@@ -249,7 +249,7 @@ sub _tag_page {
   my $tag = $req->{caps}{tag};
   return Iczelia::HTTP::error(404)
     unless defined $tag && $tag =~ /^[\w .+-]{1,40}$/;
-  my $html = $ctx->{render}->render_tag_page($kind, $tag);
+  my $html = $ctx->render->render_tag_page($kind, $tag);
   return Iczelia::HTTP::error(404) unless defined $html;
   return Iczelia::HTTP::html($html);
 }
@@ -259,7 +259,7 @@ sub _tag_feed {
   my $tag = $req->{caps}{tag};
   return Iczelia::HTTP::error(404)
     unless defined $tag && $tag =~ /^[\w .+-]{1,40}$/;
-  my $xml = $ctx->{render}->render_tag_feed($kind, $tag);
+  my $xml = $ctx->render->render_tag_feed($kind, $tag);
   return Iczelia::HTTP::error(404) unless defined $xml;
   return {
     status  => 200,

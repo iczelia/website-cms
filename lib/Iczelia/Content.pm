@@ -22,29 +22,36 @@ use Carp qw(croak);
 # CRUD over pages, posts, updates, activity, webring, settings.
 # Mutating methods invalidate caches via the injected $render.
 #
-# Package layout (Iczelia::Content is split across 9 files; all reopen
-# this package). Each fragment touches only $self->{db} and (where
-# relevant) $self->{render} for cache invalidation. No cross-file
-# helper calls; readers can locate any method by name below.
+# Iczelia::Content is composed from eight mixin packages plus this leaf
+# (see @ISA below). $self is always blessed Iczelia::Content; method
+# dispatch walks @ISA. Each mixin lives in its own namespace and file:
 #
-#   Content.pm           new (this file).
-#   Content/Pages.pm     get_page, save_page.
-#   Content/Posts.pm     get_post, list_posts, create_post, update_post,
-#                        delete_post, list_aliases, list_revisions,
-#                        get_revision, delete_alias, normalize_publish_at,
-#                        _word_count.
-#   Content/Dynamic.pm   validate_dynamic_route, list_dynamic_pages,
-#                        get_dynamic_page, get_dynamic_page_by_route,
-#                        create_dynamic_page, update_dynamic_page,
-#                        delete_dynamic_page, _validate_template.
-#   Content/Langs.pm     list_langs, get_lang, create_lang, update_lang,
-#                        delete_lang, _validate_lang_name,
-#                        _validate_lang_record.
-#   Content/Media.pm     list_media, get_media, create_media, delete_media.
-#   Content/Activity.pm  list_activity, list_updates, replace_updates,
-#                        set_currently.
-#   Content/Webring.pm   list_webring, replace_webring.
-#   Content/Settings.pm  all_settings, set_settings.
+#   Iczelia::Content              new (this file).
+#   Iczelia::Content::Pages       get_page, save_page.
+#   Iczelia::Content::Posts       get_post, list_posts, create_post,
+#                                 update_post, delete_post, list_aliases,
+#                                 list_revisions, get_revision,
+#                                 delete_alias, normalize_publish_at,
+#                                 _word_count.
+#   Iczelia::Content::Dynamic     validate_dynamic_route,
+#                                 list_dynamic_pages, get_dynamic_page,
+#                                 get_dynamic_page_by_route,
+#                                 create_dynamic_page,
+#                                 update_dynamic_page,
+#                                 delete_dynamic_page, _validate_template.
+#   Iczelia::Content::Langs       list_langs, get_lang, create_lang,
+#                                 update_lang, delete_lang,
+#                                 _validate_lang_name,
+#                                 _validate_lang_record.
+#   Iczelia::Content::Media       list_media, get_media, create_media,
+#                                 delete_media.
+#   Iczelia::Content::Activity    list_activity, list_updates,
+#                                 replace_updates, set_currently.
+#   Iczelia::Content::Webring     list_webring, replace_webring.
+#   Iczelia::Content::Settings    all_settings, set_settings.
+#
+# Each fragment reads $self->{db} and (where relevant) $self->{render}
+# for cache invalidation. No cross-mixin bare-name calls.
 
 sub new {
   my ($class, %arg) = @_;
@@ -61,5 +68,16 @@ require Iczelia::Content::Media;
 require Iczelia::Content::Activity;
 require Iczelia::Content::Webring;
 require Iczelia::Content::Settings;
+
+our @ISA = qw(
+  Iczelia::Content::Pages
+  Iczelia::Content::Posts
+  Iczelia::Content::Dynamic
+  Iczelia::Content::Langs
+  Iczelia::Content::Media
+  Iczelia::Content::Activity
+  Iczelia::Content::Webring
+  Iczelia::Content::Settings
+);
 
 1;

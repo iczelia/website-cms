@@ -14,13 +14,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Posts;
 use strict;
 use warnings;
 use Carp          qw(croak);
 use Iczelia::Util qw(slugify);
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: post CRUD + revisions + aliases. Pulled
+# into the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
+# instance.
 # Provides: get_post, list_posts, create_post, update_post, delete_post,
 #   list_aliases, list_revisions, get_revision, delete_alias,
 #   normalize_publish_at (public; called from Handlers/Admin/Posts.pm),

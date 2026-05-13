@@ -43,7 +43,8 @@ my $tpl  = Iczelia::Template->new(dirs => ["$FindBin::Bin/../share/templates"]);
 my $rnd  = Iczelia::Render->new(db => $db, template => $tpl);
 my $auth = Iczelia::Auth->new(db => $db, cookie_secret => 'a' x 64);
 
-my $ctx = {db => $db, template => $tpl, render => $rnd, auth => $auth};
+require Iczelia::Context;
+my $ctx = Iczelia::Context->new(db => $db, template => $tpl, render => $rnd, auth => $auth);
 
 sub req {
   my ($path) = @_;

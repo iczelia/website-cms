@@ -23,7 +23,7 @@ use Iczelia::Highlight              ();
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/settings/',                $gate->(\&_settings_form));
   $router->post('/admin/settings/',               $gate->(\&_settings_save));
   $router->get('/admin/settings/theme-preview',   $gate->(\&_theme_preview));
@@ -80,7 +80,7 @@ sub _settings_keys {
 
 sub _settings_form {
   my ($ctx, $req) = @_;
-  my $kv  = $ctx->{content}->all_settings;
+  my $kv  = $ctx->content->all_settings;
   my $sid = $req->{auth_sid};
 
   my @groups;
@@ -103,21 +103,21 @@ sub _settings_form {
     $ctx, $req, 'admin_settings.tpl',
     title       => 'settings',
     form_action => '/admin/settings/',
-    form_csrf   => $ctx->{auth}->csrf_token($sid, 'settings'),
+    form_csrf   => $ctx->auth->csrf_token($sid, 'settings'),
     groups      => \@groups,
   );
 }
 
 sub _settings_save {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'settings');
+  my $err = $ctx->auth->require_csrf($req, 'settings');
   return $err if $err;
   my $allowed = _settings_keys();
   my %kv;
   for my $k (keys %{$req->{params}}) {
     $kv{$k} = $req->{params}{$k} if $allowed->{$k};
   }
-  $ctx->{content}->set_settings(\%kv);
+  $ctx->content->set_settings(\%kv);
   return Iczelia::HTTP::redirect('/admin/settings/');
 }
 
@@ -161,7 +161,7 @@ sub _theme_preview {
   my @samples =
     map +{lang => $_->[0], html => Iczelia::Highlight::highlight($_->[1], $_->[0])},
     @THEME_PREVIEW_SAMPLES;
-  my $vars = $ctx->{render}->base_vars(
+  my $vars = $ctx->render->base_vars(
     title   => 'iczelia :: theme preview',
     page    => {is_admin_preview => 1},
     classes => [@THEME_PREVIEW_CLASSES],
@@ -170,7 +170,7 @@ sub _theme_preview {
       Iczelia::Highlight::highlight(q{int x = 1; /* in a quote */}, 'c'),
   );
   return Iczelia::HTTP::html(
-    $ctx->{template}->render('views/theme_preview.tpl', $vars));
+    $ctx->template->render('views/theme_preview.tpl', $vars));
 }
 
 # Preview shares one per-session token across every admin form, so we
@@ -178,12 +178,12 @@ sub _theme_preview {
 sub _preview {
   my ($ctx, $req) = @_;
   my $tok      = $req->{params}{csrf} // '';
-  my $expected = $ctx->{auth}->csrf_token($req->{auth_sid}, 'preview');
+  my $expected = $ctx->auth->csrf_token($req->{auth_sid}, 'preview');
   return Iczelia::HTTP::error(400, 'csrf')
     unless $tok eq $expected;
   my $body = $req->{params}{body} // '';
   my ($html, $math) = Iczelia::Markup::render($body);
-  if (my $tex = $ctx->{render}->tex) {
+  if (my $tex = $ctx->render->tex) {
     $html =~ s{__MATH(\d+)__}{
             my $m = $math->[$1];
             $m ? $tex->render(@$m) : ''

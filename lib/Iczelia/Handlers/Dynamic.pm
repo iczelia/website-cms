@@ -29,9 +29,9 @@ sub lookup {
   return undef unless ($req->{method} || 'GET') eq 'GET';
   return undef unless $path =~ m{^/[a-z0-9]};
   my $row =
-    $ctx->{db}->row('SELECT 1 FROM dynamic_pages WHERE route=?', $path);
+    $ctx->db->row('SELECT 1 FROM dynamic_pages WHERE route=?', $path);
   return undef unless $row;
-  my $html = $ctx->{render}->render_dynamic($path);
+  my $html = $ctx->render->render_dynamic($path);
   return undef unless defined $html;
   return Iczelia::HTTP::html($html);
 }

@@ -24,7 +24,7 @@ use Iczelia::Handlers::Admin::Forms qw(
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/updates/',           $gate->(\&_updates_form));
   $router->post('/admin/updates/',          $gate->(\&_updates_save));
   $router->get('/admin/activity/',          $gate->(\&_activity_view));
@@ -34,7 +34,7 @@ sub register {
 
 sub _updates_form {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_updates;
+  my $rows = $ctx->content->list_updates;
   my $sid  = $req->{auth_sid};
 
   my $field = {
@@ -58,7 +58,7 @@ sub _updates_form {
     $ctx, $req,
     title  => 'updates',
     action => '/admin/updates/',
-    csrf   => $ctx->{auth}->csrf_token($sid, 'updates'),
+    csrf   => $ctx->auth->csrf_token($sid, 'updates'),
     body   => $html_inputs,
   );
   return Iczelia::HTTP::html($html);
@@ -66,19 +66,19 @@ sub _updates_form {
 
 sub _updates_save {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'updates');
+  my $err = $ctx->auth->require_csrf($req, 'updates');
   return $err if $err;
   my @rows = grep {
     ($_->{date} // '') =~ /^\d{4}-\d{2}-\d{2}$/
       && length($_->{body} // '')
   } kvtable_rows_from_params($req->{params});
-  $ctx->{content}->replace_updates(\@rows);
+  $ctx->content->replace_updates(\@rows);
   return Iczelia::HTTP::redirect('/admin/updates/');
 }
 
 sub _activity_view {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_activity;
+  my $rows = $ctx->content->list_activity;
   my %by_src;
   for my $r (@$rows) {push @{$by_src{$r->{source}}}, $r}
   my $currently =
@@ -101,26 +101,26 @@ sub _activity_view {
     sections   => \@sections,
     currently  => $currently,
     csrf_extra => {
-      currently => $ctx->{auth}->csrf_token($sid, 'activity:currently'),
-      refresh   => $ctx->{auth}->csrf_token($sid, 'activity:refresh'),
+      currently => $ctx->auth->csrf_token($sid, 'activity:currently'),
+      refresh   => $ctx->auth->csrf_token($sid, 'activity:refresh'),
     },
   );
 }
 
 sub _activity_currently {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'activity:currently');
+  my $err = $ctx->auth->require_csrf($req, 'activity:currently');
   return $err if $err;
-  $ctx->{content}->set_currently($req->{params}{currently} // '');
+  $ctx->content->set_currently($req->{params}{currently} // '');
   return Iczelia::HTTP::redirect('/admin/activity/');
 }
 
 sub _activity_refresh {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'activity:refresh');
+  my $err = $ctx->auth->require_csrf($req, 'activity:refresh');
   return $err if $err;
-  if ($ctx->{fetcher}) {
-    eval {$ctx->{fetcher}->run_all};
+  if ($ctx->fetcher) {
+    eval {$ctx->fetcher->run_all};
   }
   return Iczelia::HTTP::redirect('/admin/activity/');
 }

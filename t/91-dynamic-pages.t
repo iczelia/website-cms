@@ -37,22 +37,22 @@ my $r   = Iczelia::Render->new(db => $db, template => $tpl);
 my $c   = Iczelia::Content->new(db => $db, render => $r);
 
 # 1. Validate routes.
-my ($r1, $e1) = Iczelia::Content::validate_dynamic_route('/zine/');
+my ($r1, $e1) = Iczelia::Content::Dynamic::validate_dynamic_route('/zine/');
 is($r1, '/zine/', 'simple route accepted');
 ok(!$e1, 'no error');
 
-my ($r2, $e2) = Iczelia::Content::validate_dynamic_route('/about/now/');
+my ($r2, $e2) = Iczelia::Content::Dynamic::validate_dynamic_route('/about/now/');
 is($r2, '/about/now/', 'two-segment route accepted');
 
-my ($r3, $e3) = Iczelia::Content::validate_dynamic_route('/foo');
+my ($r3, $e3) = Iczelia::Content::Dynamic::validate_dynamic_route('/foo');
 ok(!$r3, 'missing trailing slash rejected');
 like($e3, qr/invalid/, 'invalid');
 
-my ($r4, $e4) = Iczelia::Content::validate_dynamic_route('/admin/foo/');
+my ($r4, $e4) = Iczelia::Content::Dynamic::validate_dynamic_route('/admin/foo/');
 ok(!$r4, 'reserved prefix rejected');
 like($e4, qr/reserved/, 'reserved error');
 
-my ($r5, $e5) = Iczelia::Content::validate_dynamic_route('/Blog/');
+my ($r5, $e5) = Iczelia::Content::Dynamic::validate_dynamic_route('/Blog/');
 ok(!$r5, 'uppercase rejected');
 
 # 2. CRUD.

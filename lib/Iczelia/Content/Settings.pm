@@ -14,11 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Settings;
 use strict;
 use warnings;
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: site-wide settings key/value store. Pulled
+# into the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
+# instance.
 # Provides: all_settings, set_settings.
 # Reads $self slots: db, render.
 

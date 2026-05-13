@@ -14,15 +14,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Render;
+package Iczelia::Render::Assets;
 use strict;
 use warnings;
 use Iczelia::Minify ();
 
-# Iczelia::Render fragment. Full package layout in Render.pm.
+# Iczelia::Render mixin: home-page asset bundling. Pulled into the
+# leaf Iczelia::Render via @ISA. $self is an Iczelia::Render instance.
 # Provides: _home_css.
 # Reads $self slots: cfg, _home_css (memoized here).
-# Calls cross-file helpers: none.
 
 sub _home_css {
   my ($self) = @_;

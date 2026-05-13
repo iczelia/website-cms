@@ -283,10 +283,11 @@ ok($child_pid && $child_pid > 0, 'rebuild child published its pid');
 # Build a fake ctx that _cache_rebuild_cancel will accept. The handler
 # checks csrf via $ctx->{auth}, so install a stub that just says yes,
 # and provide the gating context the helper expects.
-my $ctx = {
+require Iczelia::Context;
+my $ctx = Iczelia::Context->new(
   db   => $db,
   auth => bless({}, 'CacheCancelStubAuth'),
-};
+);
 {
   package CacheCancelStubAuth;
   sub require_csrf {return undef}

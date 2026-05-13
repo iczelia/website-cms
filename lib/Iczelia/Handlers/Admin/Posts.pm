@@ -28,7 +28,7 @@ use constant TAGS_MAX      => 200;
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   for my $kind (qw(blog journal)) {
     $router->get("/admin/$kind/",           $gate->(\&_post_list,         $kind));
     $router->get("/admin/$kind/new",        $gate->(\&_post_new,          $kind));
@@ -49,7 +49,7 @@ sub register {
 
 sub _post_list {
   my ($ctx, $req, $kind) = @_;
-  my $posts = $ctx->{content}->list_posts($kind);
+  my $posts = $ctx->content->list_posts($kind);
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_post_list.tpl',
     title => "$kind posts",
@@ -66,7 +66,7 @@ sub _post_new {
 sub _post_edit {
   my ($ctx, $req, $kind) = @_;
   my $slug = $req->{caps}{slug};
-  my $post = $ctx->{content}->get_post($kind, $slug)
+  my $post = $ctx->content->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
   return _render_post_form($ctx, $req, $kind, $post);
 }
@@ -78,12 +78,12 @@ sub _render_post_form {
   my $action  = $post ? "/admin/$kind/$post->{slug}/edit" : "/admin/$kind/new";
   my $aliases = [];
   if ($post) {
-    my $rows = $ctx->{content}->list_aliases($post->{id});
+    my $rows = $ctx->content->list_aliases($post->{id});
     for my $a (@$rows) {
       push @$aliases,
         {
         from_slug => $a->{from_slug},
-        csrf_del  => $ctx->{auth}
+        csrf_del  => $ctx->auth
           ->csrf_token($sid, "alias-del:$kind:$post->{slug}:$a->{from_slug}"),
         };
     }
@@ -117,7 +117,7 @@ sub _render_post_form {
     kind        => $kind,
     post        => $rec,
     form_action => $action,
-    csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
+    csrf_form   => $ctx->auth->csrf_token($sid, $form_name),
   );
 }
 
@@ -143,7 +143,7 @@ sub _validate_post {
   my $pub_in = $p->{publish_at} // '';
   my $publish_at;
   if (length $pub_in) {
-    $publish_at = Iczelia::Content::normalize_publish_at($pub_in);
+    $publish_at = Iczelia::Content::Posts::normalize_publish_at($pub_in);
     return (undef, 'invalid publish_at')
       unless defined $publish_at;
     return (undef, 'publish_at in the past')
@@ -166,45 +166,45 @@ sub _validate_post {
 
 sub _post_create {
   my ($ctx, $req, $kind) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, "post-new:$kind");
+  my $err = $ctx->auth->require_csrf($req, "post-new:$kind");
   return $err if $err;
   my ($rec, $why) = _validate_post($req->{params}, undef);
   return Iczelia::HTTP::error(400, $why) unless $rec;
-  my $slug = $ctx->{content}->create_post($kind, $rec);
+  my $slug = $ctx->content->create_post($kind, $rec);
   return Iczelia::HTTP::redirect("/admin/$kind/$slug/edit");
 }
 
 sub _post_update {
   my ($ctx, $req, $kind) = @_;
   my $old = $req->{caps}{slug};
-  my $err = $ctx->{auth}->require_csrf($req, "post:$kind:$old");
+  my $err = $ctx->auth->require_csrf($req, "post:$kind:$old");
   return $err if $err;
   my ($rec, $why) = _validate_post($req->{params}, $old);
   return Iczelia::HTTP::error(400, $why) unless $rec;
   $rec->{author} = $req->{auth_user};
-  my $new = $ctx->{content}->update_post($kind, $old, $rec);
+  my $new = $ctx->content->update_post($kind, $old, $rec);
   return Iczelia::HTTP::redirect("/admin/$kind/$new/edit");
 }
 
 sub _post_delete {
   my ($ctx, $req, $kind) = @_;
   my $slug = $req->{caps}{slug};
-  my $err  = $ctx->{auth}->require_csrf($req, "post:$kind:$slug");
+  my $err  = $ctx->auth->require_csrf($req, "post:$kind:$slug");
   return $err if $err;
-  $ctx->{content}->delete_post($kind, $slug);
+  $ctx->content->delete_post($kind, $slug);
   return Iczelia::HTTP::redirect("/admin/$kind/");
 }
 
 sub _revisions_list {
   my ($ctx, $req, $kind) = @_;
   my $slug = $req->{caps}{slug};
-  my $post = $ctx->{content}->get_post($kind, $slug)
+  my $post = $ctx->content->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $rows = $ctx->{content}->list_revisions($post->{id});
+  my $rows = $ctx->content->list_revisions($post->{id});
   my $sid = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{created_fmt}  = ts_fmt($r->{created_at});
-    $r->{csrf_restore} = $ctx->{auth}
+    $r->{csrf_restore} = $ctx->auth
       ->csrf_token($sid, "rev-restore:$kind:$slug:$r->{revision_num}");
   }
   return Iczelia::Handlers::Admin::render_admin(
@@ -221,9 +221,9 @@ sub _revisions_view {
   my ($ctx, $req, $kind) = @_;
   my $slug = $req->{caps}{slug};
   my $rev  = $req->{caps}{rev} + 0;
-  my $post = $ctx->{content}->get_post($kind, $slug)
+  my $post = $ctx->content->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $row = $ctx->{content}->get_revision($post->{id}, $rev);
+  my $row = $ctx->content->get_revision($post->{id}, $rev);
   return Iczelia::HTTP::error(404) unless $row;
   my $sid = $req->{auth_sid};
   $row->{created_fmt} = ts_fmt($row->{created_at});
@@ -234,7 +234,7 @@ sub _revisions_view {
     slug         => $slug,
     post         => $post,
     rev          => $row,
-    csrf_restore => $ctx->{auth}->csrf_token($sid, "rev-restore:$kind:$slug:$rev"),
+    csrf_restore => $ctx->auth->csrf_token($sid, "rev-restore:$kind:$slug:$rev"),
   );
 }
 
@@ -243,16 +243,16 @@ sub _revisions_restore {
   my $slug = $req->{caps}{slug};
   my $rev  = $req->{caps}{rev} + 0;
   my $err  =
-    $ctx->{auth}->require_csrf($req, "rev-restore:$kind:$slug:$rev");
+    $ctx->auth->require_csrf($req, "rev-restore:$kind:$slug:$rev");
   return $err if $err;
-  my $post = $ctx->{content}->get_post($kind, $slug)
+  my $post = $ctx->content->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $row = $ctx->{content}->get_revision($post->{id}, $rev);
+  my $row = $ctx->content->get_revision($post->{id}, $rev);
   return Iczelia::HTTP::error(404) unless $row;
 
   # Restore is itself a save: the restored body becomes the next
   # revision so the original history is preserved.
-  my $new_slug = $ctx->{content}->update_post(
+  my $new_slug = $ctx->content->update_post(
     $kind, $slug,
     {
       title      => $row->{title},
@@ -273,9 +273,9 @@ sub _alias_delete {
   my $slug = $req->{caps}{slug};
   my $from = $req->{caps}{from};
   my $err  =
-    $ctx->{auth}->require_csrf($req, "alias-del:$kind:$slug:$from");
+    $ctx->auth->require_csrf($req, "alias-del:$kind:$slug:$from");
   return $err if $err;
-  $ctx->{content}->delete_alias($kind, $from);
+  $ctx->content->delete_alias($kind, $from);
   return Iczelia::HTTP::redirect("/admin/$kind/$slug/edit");
 }
 

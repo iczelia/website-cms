@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Render;
+package Iczelia::Render::Page;
 use strict;
 use warnings;
 use Iczelia::Util qw(escape_html escape_url split_tags decode_json_hash);
@@ -22,16 +22,19 @@ use Iczelia::Time qw(fmt_date fmt_ago atom_iso clock_string);
 
 use constant TAG_FEED_SCAN_LIMIT => 60;
 
-# Iczelia::Render fragment. Full package layout in Render.pm.
-# Provides: render_home, render_page, render_post, render_dynamic,
+# Iczelia::Render mixin: page-rendering methods. Pulled into the leaf
+# Iczelia::Render via @ISA. $self is an Iczelia::Render instance so
+# `$self->_md`, `$self->base_vars`, `$self->_kappa_title` resolve
+# through the inheritance chain to the relevant sibling mixin.
+# Methods provided here:
+#   render_home, render_page, render_post, render_dynamic,
 #   render_kind_index, render_kind_year, render_blog_index,
 #   render_blog_year, render_journal_index, render_journal_year,
 #   render_not_found, render_updates_full, render_tag_page,
-#   render_tag_feed; private helpers _year_nav_data, _kind_intro_html,
-#   _row_to_entry, _cached_page, _cache_page, _post_list.
-# Reads $self slots: db, template, tex (via _md).
-# Calls cross-file helpers: base_vars, _kappa_title (Render.pm);
-#   _md, _meta_desc, _cook_page_data (Render/Markup.pm).
+#   render_tag_feed; private _year_nav_data, _kind_intro_html,
+#   _row_to_entry, _cached_page, _cache_page, _post_list,
+#   _home_load_page_data, _home_load_updates, _home_load_activity,
+#   _home_collapse_github, _home_load_blog_teaser.
 
 sub render_home {
   my ($self) = @_;
@@ -214,7 +217,7 @@ sub render_page {
   }
   for my $f (qw(intro_html body_html)) {
     next unless defined $cooked->{$f} && length $cooked->{$f};
-    my $d = _meta_desc($cooked->{$f});
+    my $d = Iczelia::Render::Markup::_meta_desc($cooked->{$f});
     if (length $d) {$meta{description} = $d; last}
   }
 
@@ -296,7 +299,7 @@ sub render_dynamic {
   my %meta = (canonical => $route, og_title => $row->{title});
   for my $f (qw(body_html intro_html)) {
     next unless defined $cooked{$f} && length $cooked{$f};
-    my $d = _meta_desc($cooked{$f});
+    my $d = Iczelia::Render::Markup::_meta_desc($cooked{$f});
     if (length $d) {$meta{description} = $d; last}
   }
   my $html = eval {
@@ -347,7 +350,7 @@ sub render_post {
       canonical      => "/$kind/$slug/",
       og_type        => 'article',
       og_title       => $row->{title},
-      description     => _meta_desc($body_html),
+      description     => Iczelia::Render::Markup::_meta_desc($body_html),
       keywords       => join(', ', @tags),
       published_time => ($row->{date} // ''),
       modified_time  => ($row->{updated_at} ? atom_iso($row->{updated_at}) : ''),
@@ -361,7 +364,7 @@ sub render_post {
       slug        => $slug,
       word_count  => $row->{word_count} // 0,
       kappa       => $row->{kappa}      // '',
-      kappa_title => _kappa_title($row->{kappa}),
+      kappa_title => Iczelia::Render::_kappa_title($row->{kappa}),
     },
   );
 
@@ -441,7 +444,7 @@ sub _row_to_entry {
     date_fmt    => fmt_date($r->{date}),
     tags        => [split_tags($r->{tags})],
     kappa       => $r->{kappa} // '',
-    kappa_title => _kappa_title($r->{kappa}),
+    kappa_title => Iczelia::Render::_kappa_title($r->{kappa}),
   };
   if   ($kind eq 'journal') {$e->{body_html} = $self->_md($r->{body})}
   else                      {$e->{url}       = "/$kind/$r->{slug}/"}
@@ -462,7 +465,7 @@ sub render_kind_index {
       page        => {"is_$kind" => 1},
       meta        => {
         canonical => "/$kind/",
-        description => (length $intro_html ? _meta_desc($intro_html)
+        description => (length $intro_html ? Iczelia::Render::Markup::_meta_desc($intro_html)
           : $cfg->{desc_empty}),
       },
       data            => {intro_html => $intro_html},
@@ -504,7 +507,7 @@ sub render_kind_year {
     page        => {"is_$kind" => 1},
     meta        => {
       canonical => ($opt{canonical} // "/$kind/year/$year/"),
-      description => (length $intro_html ? _meta_desc($intro_html)
+      description => (length $intro_html ? Iczelia::Render::Markup::_meta_desc($intro_html)
         : $cfg->{year_desc}->($year)),
     },
     data              => {intro_html => $intro_html},

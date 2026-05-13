@@ -24,14 +24,14 @@ use Iczelia::Handlers::Admin::Forms qw(
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/webring/',  $gate->(\&_webring_form));
   $router->post('/admin/webring/', $gate->(\&_webring_save));
 }
 
 sub _webring_form {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_webring;
+  my $rows = $ctx->content->list_webring;
   my $sid  = $req->{auth_sid};
 
   my $field = {
@@ -64,7 +64,7 @@ sub _webring_form {
     $ctx, $req,
     title  => 'webring',
     action => '/admin/webring/',
-    csrf   => $ctx->{auth}->csrf_token($sid, 'webring'),
+    csrf   => $ctx->auth->csrf_token($sid, 'webring'),
     body   => $html_inputs,
   );
   return Iczelia::HTTP::html($html);
@@ -72,11 +72,11 @@ sub _webring_form {
 
 sub _webring_save {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'webring');
+  my $err = $ctx->auth->require_csrf($req, 'webring');
   return $err if $err;
   my @rows =
     grep {length($_->{name} // '')} kvtable_rows_from_params($req->{params});
-  $ctx->{content}->replace_webring(\@rows);
+  $ctx->content->replace_webring(\@rows);
   return Iczelia::HTTP::redirect('/admin/webring/');
 }
 

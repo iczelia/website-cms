@@ -36,19 +36,19 @@ sub invalidate_all  { }
 package main;
 
 # Direct unit tests on _word_count.
-is(Iczelia::Content::_word_count(''),      0, 'empty body -> 0');
-is(Iczelia::Content::_word_count('a b c'), 3, 'three plain words');
-is(Iczelia::Content::_word_count("one\ntwo  three\tfour"),
+is(Iczelia::Content::Posts::_word_count(''),      0, 'empty body -> 0');
+is(Iczelia::Content::Posts::_word_count('a b c'), 3, 'three plain words');
+is(Iczelia::Content::Posts::_word_count("one\ntwo  three\tfour"),
   4, 'whitespace varieties split');
-is(Iczelia::Content::_word_count("hello ```code\nignored words```"),
+is(Iczelia::Content::Posts::_word_count("hello ```code\nignored words```"),
   1, 'fenced code stripped');
-is(Iczelia::Content::_word_count('see `inline code` here'),
+is(Iczelia::Content::Posts::_word_count('see `inline code` here'),
   2, 'inline code stripped (only see+here remain)');
-is(Iczelia::Content::_word_count('go [click here](https://example.com) now'),
+is(Iczelia::Content::Posts::_word_count('go [click here](https://example.com) now'),
   4, 'link visible text retained, URL excluded');
-is(Iczelia::Content::_word_count('![alt text here](/img.png) caption'),
+is(Iczelia::Content::Posts::_word_count('![alt text here](/img.png) caption'),
   4, 'image alt counted, URL excluded');
-is(Iczelia::Content::_word_count('paragraph <em>with html</em> tags'),
+is(Iczelia::Content::Posts::_word_count('paragraph <em>with html</em> tags'),
   4, 'html tags stripped');
 
 # Round-trip via Content::create_post and Content::update_post.

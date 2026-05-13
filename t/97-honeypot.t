@@ -31,7 +31,8 @@ is_deeply([@Iczelia::Handlers::Honeypot::PATHS], ['/wp-admin', '/.env'],
   'honeypot paths');
 
 my $router = Iczelia::Router->new;
-my $ctx    = {cfg => {'share-dir' => "$FindBin::Bin/../share"}};
+require Iczelia::Context;
+my $ctx = Iczelia::Context->new(cfg => {'share-dir' => "$FindBin::Bin/../share"});
 Iczelia::Handlers::Honeypot->register($router, $ctx);
 
 my $first_body;
@@ -69,7 +70,7 @@ SKIP: {
 
 {
   my $robots = Iczelia::Handlers::Feeds::_robots(
-    {db => bless({}, 't::FakeDB')});
+    Iczelia::Context->new(db => bless({}, 't::FakeDB')));
   is($robots->{headers}{'Content-Type'},
     'text/plain; charset=utf-8', 'robots.txt content type');
   like($robots->{body}, qr{^Disallow: /admin/$}m,    'robots disallows /admin/');

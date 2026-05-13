@@ -36,7 +36,7 @@ sub _dashboard {
   $range = '7d' unless $range =~ /^(?:7d|30d|all)$/;
   my $bots = ($req->{qparams}{bots} // '') eq 'hide' ? 'hide' : 'show';
   my $data = Iczelia::Analytics::dashboard_data(
-    $ctx->{db},
+    $ctx->db,
     range => $range,
     bots  => $bots
   );
@@ -57,7 +57,7 @@ sub _dashboard {
 
 sub _raw {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{db}->all(
+  my $rows = $ctx->db->all(
     q{SELECT id, ts, path, status, method, visitor_hash, referer_host, ua_class
             FROM analytics_events ORDER BY id DESC LIMIT } . ANALYTICS_RAW_LIMIT
   );

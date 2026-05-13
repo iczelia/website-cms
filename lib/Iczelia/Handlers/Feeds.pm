@@ -54,7 +54,7 @@ sub _base_url {
 
 sub _feed {
   my ($ctx)  = @_;
-  my $db     = $ctx->{db};
+  my $db     = $ctx->db;
   my $base   = _base_url($db);
   my $title  = _setting($db, 'site.title',  'iczelia');
   my $author = _setting($db, 'site.author', 'iczelia');
@@ -156,7 +156,7 @@ sub _rss_date_from_iso {
 
 sub _rss {
   my ($ctx)  = @_;
-  my $db     = $ctx->{db};
+  my $db     = $ctx->db;
   my $base   = _base_url($db);
   my $title  = _setting($db, 'site.title',  'iczelia');
   my $author = _setting($db, 'site.author', 'iczelia');
@@ -228,7 +228,7 @@ sub _rss {
 
 sub _sitemap {
   my ($ctx) = @_;
-  my $db    = $ctx->{db};
+  my $db    = $ctx->db;
   my $base  = _base_url($db);
 
   my @urls = (
@@ -306,7 +306,7 @@ sub _sitemap {
 
 sub _robots {
   my ($ctx) = @_;
-  my $base = _base_url($ctx->{db});
+  my $base = _base_url($ctx->db);
   my $body = "User-agent: *\n";
   $body .= "Disallow: $_\n"
     for ('/admin/', @Iczelia::Handlers::Honeypot::PATHS);

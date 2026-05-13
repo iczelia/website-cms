@@ -50,7 +50,7 @@ my $slug = $c->create_post(
 );
 is($r->render_post('blog', $slug),
   undef, 'render_post returns undef for future-scheduled post');
-my $list = Iczelia::Render::_post_list($r, 'blog');
+my $list = $r->_post_list('blog');
 ok(
   !grep({$_->{slug} eq $slug} @$list),
   '_post_list excludes future-scheduled post'
@@ -61,7 +61,7 @@ $db->do_('UPDATE posts SET publish_at=? WHERE slug=?', $now - 60, $slug);
 my $html = $r->render_post('blog', $slug);
 ok(defined $html && length $html, 'past-scheduled post renders');
 
-$list = Iczelia::Render::_post_list($r, 'blog');
+$list = $r->_post_list('blog');
 ok(
   scalar(grep {$_->{slug} eq $slug} @$list),
   '_post_list now includes past-scheduled post'

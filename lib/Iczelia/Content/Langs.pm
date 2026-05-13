@@ -14,12 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package Iczelia::Content;
+package Iczelia::Content::Langs;
 use strict;
 use warnings;
 use Iczelia::Highlight ();
 
-# Iczelia::Content fragment. Full package layout in Content.pm.
+# Iczelia::Content mixin: admin-defined highlighter languages. Pulled
+# into the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
+# instance.
 # Provides: list_langs, get_lang, create_lang, update_lang, delete_lang,
 #   _validate_lang_name, _validate_lang_record.
 # Reads $self slots: db, render.

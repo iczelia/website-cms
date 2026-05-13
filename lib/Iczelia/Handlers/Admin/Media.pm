@@ -35,7 +35,7 @@ my $JSON = JSON::PP->new->utf8(0);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = $ctx->{auth}->route_gate($ctx);
+  my $gate = $ctx->auth->route_gate($ctx);
   $router->get('/admin/media/',             $gate->(\&_media_list));
   $router->post('/admin/media/upload',      $gate->(\&_media_upload));
   $router->post('/admin/media/:id/delete',  $gate->(\&_media_delete));
@@ -43,7 +43,7 @@ sub register {
 
 sub _media_list {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{content}->list_media;
+  my $rows = $ctx->content->list_media;
   my $sid = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{url} = '/media/' . $r->{filename};
@@ -53,7 +53,7 @@ sub _media_list {
       : $r->{url};
     $r->{date_fmt} = ts_fmt($r->{uploaded_at});
     $r->{size_kb}  = sprintf('%.0f', ($r->{size} || 0) / 1024);
-    $r->{csrf_del} = $ctx->{auth}->csrf_token($sid, "media:del:$r->{id}");
+    $r->{csrf_del} = $ctx->auth->csrf_token($sid, "media:del:$r->{id}");
   }
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_media.tpl',
@@ -64,7 +64,7 @@ sub _media_list {
 
 sub _media_upload {
   my ($ctx, $req) = @_;
-  my $err = $ctx->{auth}->require_csrf($req, 'upload');
+  my $err = $ctx->auth->require_csrf($req, 'upload');
   return $err if $err;
 
   my @files = @{$req->{uploads} || []};
@@ -82,7 +82,7 @@ sub _media_upload {
   require Digest::SHA;
   my $sha  = Digest::SHA::sha256_hex($f->{body});
   my $name = "$sha.$ext";
-  my $dir  = $ctx->{cfg}{'media-dir'};
+  my $dir  = $ctx->cfg->{'media-dir'};
   require File::Path;
   File::Path::make_path($dir) unless -d $dir;
   my $path   = "$dir/$name";
@@ -114,7 +114,7 @@ sub _media_upload {
     }
   }
 
-  $ctx->{content}->create_media(
+  $ctx->content->create_media(
     filename       => $name,
     orig_name      => $f->{filename},
     content_type   => $ct,
@@ -129,11 +129,11 @@ sub _media_upload {
 sub _media_delete {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = $ctx->{auth}->require_csrf($req, "media:del:$id");
+  my $err = $ctx->auth->require_csrf($req, "media:del:$id");
   return $err if $err;
-  my $row = $ctx->{content}->get_media($id);
+  my $row = $ctx->content->get_media($id);
   if ($row) {
-    my $dir = $ctx->{cfg}{'media-dir'};
+    my $dir = $ctx->cfg->{'media-dir'};
 
     # _media_upload always writes <sha256>.<ext>; refuse anything
     # else here as defense in depth against DB tampering.
@@ -145,7 +145,7 @@ sub _media_delete {
       unlink $path if -e $path;
     }
   }
-  $ctx->{content}->delete_media($id);
+  $ctx->content->delete_media($id);
   return Iczelia::HTTP::redirect('/admin/media/');
 }
 
