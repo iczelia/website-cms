@@ -19,6 +19,7 @@ use strict;
 use warnings;
 
 use Iczelia::DB;
+use Iczelia::Migrate;
 use Iczelia::Template;
 use Iczelia::Render;
 use Iczelia::Router;
@@ -35,6 +36,7 @@ use Iczelia::Handlers::Public;
 use Iczelia::Handlers::Admin;
 use Iczelia::Handlers::Guestbook;
 use Iczelia::Handlers::Feeds;
+use Iczelia::Handlers::OG;
 use Iczelia::Handlers::Static;
 use Iczelia::Handlers::Honeypot;
 use Iczelia::Handlers::Dynamic;
@@ -45,6 +47,14 @@ use File::Path qw(make_path);
 sub build {
   my ($class, $cfg) = @_;
   my $db = Iczelia::DB->connect($cfg);
+
+  # Auto-migrate the schema. Runs once in the supervisor before any
+  # worker fork; idempotent. A fresh DB without `posts` is skipped
+  # (iczelia-init applies the base schema separately); existing DBs
+  # that pre-date a new column get ALTERed in here so an in-place
+  # `podman pull && systemctl restart` is enough.
+  Iczelia::Migrate::run($db);
+
   Iczelia::Highlight::set_db($db);
   my $tpl =
     Iczelia::Template->new(dirs => [$cfg->{'share-dir'} . '/templates'],);
@@ -90,6 +100,7 @@ sub build {
   Iczelia::Handlers::Static->register($router, $ctx);
   Iczelia::Handlers::Honeypot->register($router, $ctx);
   Iczelia::Handlers::Feeds->register($router, $ctx);
+  Iczelia::Handlers::OG->register($router, $ctx);
   Iczelia::Handlers::Guestbook->register($router, $ctx);
   Iczelia::Handlers::Public->register($router, $ctx);
   Iczelia::Handlers::Admin->register($router, $ctx);

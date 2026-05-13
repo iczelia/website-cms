@@ -25,6 +25,7 @@ use File::Basename qw(dirname);
 
 use Iczelia::Config;
 use Iczelia::DB;
+use Iczelia::Migrate;
 
 my %opt = (
   config => '/etc/iczelia/iczelia.conf',
@@ -62,6 +63,13 @@ for my $d ($db_path, $cfg->{'media-dir'}, $cfg->{'tmp-dir'}) {
 
 my $share = $cfg->{'share-dir'};
 my $db    = Iczelia::DB->connect($cfg);
+
+# Migrate FIRST so any ALTER-shape changes (added columns on existing
+# tables that CREATE TABLE IF NOT EXISTS won't touch) land before
+# schema.sql runs its CREATE INDEX / CREATE TRIGGER statements that
+# reference the new columns. Idempotent; a no-op on fresh DBs.
+Iczelia::Migrate::run($db);
+
 $db->apply_schema_file("$share/schema.sql");
 $db->apply_schema_file("$share/seed.sql");
 
