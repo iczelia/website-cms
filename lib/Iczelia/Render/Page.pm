@@ -739,6 +739,7 @@ sub render_series {
       intro_html  => $intro_html,
       posts       => \@posts,
       post_count  => scalar @posts,
+      posts_word  => (@posts == 1 ? 'post' : 'posts'),
     },
   );
   return $self->{template}->render('views/series.tpl', $vars);

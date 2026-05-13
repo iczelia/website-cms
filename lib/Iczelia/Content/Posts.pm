@@ -211,23 +211,26 @@ sub delete_post {
 
 sub list_tags_recent {
   my ($self, $kind, $limit) = @_;
-  $limit ||= 40;
+  $limit ||= 200;
   my $rows = $self->{db}->all(
     q{SELECT date, tags FROM posts
        WHERE kind=? AND tags<>''
        ORDER BY date DESC, created_at DESC, id DESC}, $kind
   );
-  my (%first_date, @order);
+  my (%first_date, %count, @order);
   for my $r (@$rows) {
     for my $t (split_tags($r->{tags})) {
+      $count{$t}++;
       next if exists $first_date{$t};
       $first_date{$t} = $r->{date};
       push @order, $t;
-      last if @order >= $limit;
     }
-    last if @order >= $limit;
   }
-  return [map +{tag => $_, last_used => $first_date{$_}}, @order];
+  splice @order, $limit if @order > $limit;
+  return [
+    map +{tag => $_, last_used => $first_date{$_}, count => $count{$_}},
+    @order
+  ];
 }
 
 sub list_aliases {

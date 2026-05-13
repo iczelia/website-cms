@@ -153,6 +153,7 @@ sub _render_post_form {
   $rec->{tag_options} = [
     map +{
       tag      => $_->{tag},
+      count    => $_->{count},
       selected => $have_tag{$_->{tag}} ? 1 : 0,
     },
     @$recent_tags

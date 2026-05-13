@@ -44,9 +44,10 @@
         <fieldset class="cms-field cms-field-text cms-field-tags">
           <legend>tags</legend>
           <input type="text" name="tags" value="{{ post.tags }}" placeholder="comma, separated" data-cms-tag-input>
-{% if post.tag_options %}          <div class="cms-tag-picker" data-cms-tag-picker>
-{% for t in post.tag_options %}            <button type="button" class="cms-tag-chip{% if t.selected %} cms-tag-chip-on{% endif %}" data-tag="{{ t.tag }}">{{ t.tag }}</button>
-{% endfor %}          </div>
+{% if post.tag_options %}          <ul class="cms-tag-list" data-cms-tag-picker role="listbox" aria-label="existing tags, double-click to toggle">
+{% for t in post.tag_options %}            <li class="cms-tag-item{% if t.selected %} cms-tag-item-on{% endif %}" role="option" data-tag="{{ t.tag }}" tabindex="0"><span class="cms-tag-name">{{ t.tag }}</span><span class="cms-tag-count">{{ t.count }}</span></li>
+{% endfor %}          </ul>
+          <small class="cms-help">double-click to add or remove &middot; sorted by recency</small>
 {% endif %}        </fieldset>
         <fieldset class="cms-field cms-field-kappa">
           <legend>kappa</legend>
