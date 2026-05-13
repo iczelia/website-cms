@@ -19,6 +19,11 @@ use strict;
 use warnings;
 use Iczelia::Highlight ();
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: list_langs, get_lang, create_lang, update_lang, delete_lang,
+#   _validate_lang_name, _validate_lang_record.
+# Reads $self slots: db, render.
+
 sub list_langs {
   my ($self) = @_;
   return $self->{db}->all(

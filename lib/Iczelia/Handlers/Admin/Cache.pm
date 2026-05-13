@@ -48,13 +48,6 @@ sub register {
   $router->get('/admin/cache/rebuild/status',  $gate->(\&_cache_rebuild_status));
 }
 
-# Public, exposed so {bin/iczelia-rebuild-cache,t/47*,t/48*} can import it.
-sub run_rebuild {_run_rebuild(@_)}
-
-# Public, exposed for the dashboard handler which inlines current
-# rebuild state into the template.
-sub rebuild_state {_rebuild_state(@_)}
-
 sub _cache_drop {
   my ($ctx, $req) = @_;
   my $err = $ctx->{auth}->require_csrf($req, 'cache:drop');
@@ -86,7 +79,7 @@ sub _cache_rebuild {
   my $scope = ($req->{params}{scope} // '') eq 'html' ? 'html' : 'all';
 
   my $db   = $ctx->{db};
-  my $busy = _rebuild_state($db);
+  my $busy = rebuild_state($db);
   if ($busy->{phase} =~ /^(?:starting|math|html|cancelling)$/) {
     return Iczelia::HTTP::redirect('/admin/?rebuilding=1');
   }
@@ -147,7 +140,7 @@ sub _cache_rebuild_cancel {
   my $err = $ctx->{auth}->require_csrf($req, 'cache:rebuild-cancel');
   return $err if $err;
   my $db    = $ctx->{db};
-  my $state = _rebuild_state($db);
+  my $state = rebuild_state($db);
   if ($state->{phase} !~ /^(?:starting|math|html|cancelling)$/) {
     return Iczelia::HTTP::redirect('/admin/');
   }
@@ -155,11 +148,11 @@ sub _cache_rebuild_cancel {
   my $alive = $pid > 0 && kill(0, $pid);
 
   if (!$alive) {
-    _force_clear_rebuild($db);
+    force_clear_rebuild($db);
   }
   elsif ($state->{phase} eq 'cancelling') {
     kill 'KILL', -$pid;
-    _force_clear_rebuild($db);
+    force_clear_rebuild($db);
   }
   else {
     kill 'TERM', -$pid;
@@ -168,14 +161,14 @@ sub _cache_rebuild_cancel {
   return Iczelia::HTTP::redirect('/admin/');
 }
 
-sub _force_clear_rebuild {
+sub force_clear_rebuild {
   my ($db) = @_;
   $db->set_setting(REBUILD_PHASE,       'cancelled');
   $db->set_setting(REBUILD_FINISHED_AT, time());
   $db->set_setting(REBUILD_PID,         0);
 }
 
-sub _rebuild_state {
+sub rebuild_state {
   my ($db) = @_;
   my %s;
   $s{phase}       = $db->setting(REBUILD_PHASE);
@@ -195,7 +188,7 @@ sub _rebuild_state {
 
 sub _cache_rebuild_status {
   my ($ctx, $req) = @_;
-  my $s = _rebuild_state($ctx->{db});
+  my $s = rebuild_state($ctx->{db});
   return {
     status    => 200,
     headers   => {'Content-Type' => 'application/json; charset=utf-8'},
@@ -204,7 +197,7 @@ sub _cache_rebuild_status {
   };
 }
 
-sub _run_rebuild {
+sub run_rebuild {
   my ($cfg) = @_;
   require Time::HiRes;
   require Iczelia::Util;

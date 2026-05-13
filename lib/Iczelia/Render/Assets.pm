@@ -19,6 +19,11 @@ use strict;
 use warnings;
 use Iczelia::Minify ();
 
+# Iczelia::Render fragment. Full package layout in Render.pm.
+# Provides: _home_css.
+# Reads $self slots: cfg, _home_css (memoized here).
+# Calls cross-file helpers: none.
+
 sub _home_css {
   my ($self) = @_;
   return $self->{_home_css} ||= do {

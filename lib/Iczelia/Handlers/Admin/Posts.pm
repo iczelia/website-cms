@@ -160,7 +160,7 @@ sub _validate_post {
   my $pub_in = $p->{publish_at} // '';
   my $publish_at;
   if (length $pub_in) {
-    $publish_at = Iczelia::Content::_normalize_publish_at($pub_in);
+    $publish_at = Iczelia::Content::normalize_publish_at($pub_in);
     return (undef, 'invalid publish_at')
       unless defined $publish_at;
     return (undef, 'publish_at in the past')

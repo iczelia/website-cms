@@ -18,6 +18,12 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: validate_dynamic_route, list_dynamic_pages, get_dynamic_page,
+#   get_dynamic_page_by_route, create_dynamic_page, update_dynamic_page,
+#   delete_dynamic_page, _validate_template.
+# Reads $self slots: db, render.
+
 # Reserved-route policy for admin-defined dynamic pages.
 #  - TREES: prefix off-limits, including any nested path.
 #  - EXACT: only this exact path is taken; nested paths are still allowed.

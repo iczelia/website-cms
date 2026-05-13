@@ -33,7 +33,7 @@ use Iczelia::Handlers::Admin::Webring   ();
 sub register {
   my ($class, $router, $ctx) = @_;
 
-  $router->get('/admin/',      sub {_gate(\&_dashboard, $ctx, $_[0])});
+  $router->get('/admin/',      sub {gate(\&_dashboard, $ctx, $_[0])});
   $router->get('/admin/login', sub {_login_form($ctx, $_[0])});
   $router->post('/admin/login',  sub {_login_submit($ctx, $_[0])});
   $router->post('/admin/logout', sub {_logout($ctx, $_[0])});
@@ -52,7 +52,7 @@ sub register {
 
   Iczelia::Handlers::Admin::Cache->register($router, $ctx);
   $router->post('/admin/search/rebuild',
-    sub {_gate(\&_search_rebuild, $ctx, $_[0])});
+    sub {gate(\&_search_rebuild, $ctx, $_[0])});
 
   Iczelia::Handlers::Admin::Dynamic->register($router, $ctx);
   Iczelia::Handlers::Admin::Highlight->register($router, $ctx);
@@ -61,14 +61,13 @@ sub register {
 # Public so Backup / Guestbook / Analytics can hang their admin routes
 # off the same gate without reaching for private symbols.
 sub gate {my ($fn, $ctx, @r) = @_; $ctx->{auth}->gate($fn, $ctx, @r)}
-*_gate = \&gate;
 
 sub _csrf_or_400 {
   my ($ctx, $req, $form) = @_;
   $ctx->{auth}->require_csrf($req, $form);
 }
 
-sub _admin_vars {
+sub admin_vars {
   my ($ctx, $req, %extra) = @_;
   my $sid     = $req->{auth_sid};
   my $pending = $ctx->{db}->one(
@@ -101,7 +100,6 @@ sub _admin_vars {
     %extra,
   };
 }
-*admin_vars = \&_admin_vars;
 
 sub _login_form {
   my ($ctx, $req) = @_;
@@ -220,13 +218,13 @@ sub _dashboard {
     ? int($math->{cached} * 100 / $math->{total})
     : 100;
 
-  my $rebuild = Iczelia::Handlers::Admin::Cache::_rebuild_state($db);
+  my $rebuild = Iczelia::Handlers::Admin::Cache::rebuild_state($db);
   if ($rebuild->{phase} =~ /^(?:math|html|cancelling)$/
     && $rebuild->{pid} > 0
     && !kill(0, $rebuild->{pid}))
   {
-    Iczelia::Handlers::Admin::Cache::_force_clear_rebuild($db);
-    $rebuild = Iczelia::Handlers::Admin::Cache::_rebuild_state($db);
+    Iczelia::Handlers::Admin::Cache::force_clear_rebuild($db);
+    $rebuild = Iczelia::Handlers::Admin::Cache::rebuild_state($db);
     $rebuild->{error} = 'rebuild process exited without updating state';
   }
   if ($rebuild->{phase} eq 'idle') {
@@ -271,7 +269,7 @@ sub _dashboard {
   return Iczelia::HTTP::html(
     $ctx->{template}->render(
       'views/admin_dashboard.tpl',
-      _admin_vars(
+      admin_vars(
         $ctx, $req,
         title      => 'dashboard',
         pages      => $pages,

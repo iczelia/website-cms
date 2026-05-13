@@ -18,6 +18,12 @@ package Iczelia::Render;
 use strict;
 use warnings;
 
+# Iczelia::Render fragment. Full package layout in Render.pm.
+# Provides: invalidate_page, invalidate_post, invalidate_home,
+#   invalidate_route, invalidate_all; private helper _bust_for_page.
+# Reads $self slots: db, cache.
+# Calls cross-file helpers: none.
+
 sub invalidate_page {
   my ($self, $slug) = @_;
   $self->{db}->do_(q{UPDATE pages SET rendered_html=NULL WHERE slug=?}, $slug);

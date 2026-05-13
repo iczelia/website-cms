@@ -18,6 +18,10 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: all_settings, set_settings.
+# Reads $self slots: db, render.
+
 sub all_settings {
   my ($self) = @_;
   my $rows = $self->{db}->all('SELECT key, value FROM settings ORDER BY key');

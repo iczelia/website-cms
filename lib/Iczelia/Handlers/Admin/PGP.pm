@@ -34,7 +34,7 @@ sub register {
 sub _pgp_path {
   my ($ctx) = @_;
   require Iczelia::Handlers::Static;
-  return Iczelia::Handlers::Static::_var_dir_of($ctx->{cfg}) . '/pub.pgp';
+  return Iczelia::Handlers::Static::var_dir_of($ctx->{cfg}) . '/pub.pgp';
 }
 
 sub _pgp_form {

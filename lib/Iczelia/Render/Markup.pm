@@ -20,6 +20,12 @@ use warnings;
 use Iczelia::Markup ();
 use Iczelia::Util   ();
 
+# Iczelia::Render fragment. Full package layout in Render.pm.
+# Provides: _md, _meta_desc (and helper _para_with_text),
+#   _cook_page_data, substitute_math.
+# Reads $self slots: tex (via substitute_math).
+# Calls cross-file helpers: none.
+
 my $INTRO_HEADING_RE = qr{
   \A \s* (?: \d+ [.)]? \s+ )?
   (?: intro(?:duction)? | preliminaries | overview | background

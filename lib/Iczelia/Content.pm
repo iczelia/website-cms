@@ -21,6 +21,30 @@ use Carp qw(croak);
 
 # CRUD over pages, posts, updates, activity, webring, settings.
 # Mutating methods invalidate caches via the injected $render.
+#
+# Package layout (Iczelia::Content is split across 9 files; all reopen
+# this package). Each fragment touches only $self->{db} and (where
+# relevant) $self->{render} for cache invalidation. No cross-file
+# helper calls; readers can locate any method by name below.
+#
+#   Content.pm           new (this file).
+#   Content/Pages.pm     get_page, save_page.
+#   Content/Posts.pm     get_post, list_posts, create_post, update_post,
+#                        delete_post, list_aliases, list_revisions,
+#                        get_revision, delete_alias, normalize_publish_at,
+#                        _word_count.
+#   Content/Dynamic.pm   validate_dynamic_route, list_dynamic_pages,
+#                        get_dynamic_page, get_dynamic_page_by_route,
+#                        create_dynamic_page, update_dynamic_page,
+#                        delete_dynamic_page, _validate_template.
+#   Content/Langs.pm     list_langs, get_lang, create_lang, update_lang,
+#                        delete_lang, _validate_lang_name,
+#                        _validate_lang_record.
+#   Content/Media.pm     list_media, get_media, create_media, delete_media.
+#   Content/Activity.pm  list_activity, list_updates, replace_updates,
+#                        set_currently.
+#   Content/Webring.pm   list_webring, replace_webring.
+#   Content/Settings.pm  all_settings, set_settings.
 
 sub new {
   my ($class, %arg) = @_;

@@ -205,10 +205,10 @@ sub _preview {
     unless $tok eq $expected;
   my $body = $req->{params}{body} // '';
   my ($html, $math) = Iczelia::Markup::render($body);
-  if ($ctx->{render}->{tex}) {
+  if (my $tex = $ctx->{render}->tex) {
     $html =~ s{__MATH(\d+)__}{
             my $m = $math->[$1];
-            $m ? $ctx->{render}->{tex}->render(@$m) : ''
+            $m ? $tex->render(@$m) : ''
         }ge;
   }
   return Iczelia::HTTP::html($html);

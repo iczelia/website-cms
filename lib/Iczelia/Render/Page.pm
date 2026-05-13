@@ -20,6 +20,17 @@ use warnings;
 use Iczelia::Util qw(escape_html escape_attr escape_url split_tags decode_json_hash);
 use Iczelia::Time qw(fmt_date fmt_ago atom_iso clock_string);
 
+# Iczelia::Render fragment. Full package layout in Render.pm.
+# Provides: render_home, render_page, render_post, render_dynamic,
+#   render_kind_index, render_kind_year, render_blog_index,
+#   render_blog_year, render_journal_index, render_journal_year,
+#   render_not_found, render_updates_full, render_tag_page,
+#   render_tag_feed; private helpers _year_nav_data, _kind_intro_html,
+#   _row_to_entry, _cached_page, _cache_page, _post_list.
+# Reads $self slots: db, template, tex (via _md).
+# Calls cross-file helpers: base_vars, _kappa_title (Render.pm);
+#   _md, _meta_desc, _cook_page_data (Render/Markup.pm).
+
 sub render_home {
   my ($self) = @_;
 

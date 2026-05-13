@@ -18,6 +18,10 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: list_webring, replace_webring.
+# Reads $self slots: db, render.
+
 my %WEBRING_SECTIONS = map {$_ => 1} qw(own others more);
 
 sub list_webring {

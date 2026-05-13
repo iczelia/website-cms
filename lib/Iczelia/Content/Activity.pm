@@ -18,6 +18,10 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: list_activity, list_updates, replace_updates, set_currently.
+# Reads $self slots: db, render.
+
 sub list_activity {
   my ($self) = @_;
   return $self->{db}->all(

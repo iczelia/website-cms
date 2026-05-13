@@ -538,32 +538,13 @@ sub _decide_keep_alive {
   return $client_conn =~ /\bkeep-alive\b/ ? 1 : 0;
 }
 
-# Cacheable GET/HEAD without a query string and without auth state.
-# Returns the path as the cache key, or undef when uncacheable.
+# Cacheable GET/HEAD. Bypass policy lives in Iczelia::Cache; per-
+# response opt-out is the `_no_cache` flag honoured by _handle_one.
 sub _cache_key_for {
   my ($self, $req) = @_;
   return undef unless $self->{cache};
-  return undef unless $req->{method} eq 'GET' || $req->{method} eq 'HEAD';
-  return undef if length($req->{query} // '');
-  my $path = $req->{path};
-  return undef unless defined $path && length $path;
-  return undef if $path =~ m{^/admin/?};
-  return undef if $path =~ m{^/login/?$};
-  return undef if $path =~ m{^/logout/?$};
-
-  # Home embeds a live GMT clock; caching would freeze it.
-  return undef if $path eq '/';
-
-  # Guestbook embeds a per-visitor anon-CSRF token bound to a cookie;
-  # caching would leak one user's token to everyone else.
-  return undef if $path =~ m{^/guestbook/?$};
-  return undef if $req->{cookies} && exists $req->{cookies}{iczelia_sid};
-
-  # Chrome image packs dispatch avif/png by Accept and emit Vary: Accept.
-  # The internal cache keys by path alone and stamps a fixed Vary, so
-  # leave it to nginx (which honours Vary) to split these.
-  return undef if $path =~ m{^/assets-(?:1024x768|800x600|600x400|about)/};
-  return $path;
+  return undef if $self->{cache}->bypass_for_request($req);
+  return $req->{path};
 }
 
 sub _peer_addr {

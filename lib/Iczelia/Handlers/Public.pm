@@ -194,7 +194,7 @@ sub _search {
     @results = @$rows;
   }
   return Iczelia::HTTP::html(
-    $ctx->{render}->{template}->render(
+    $ctx->{template}->render(
       'views/search.tpl',
       $ctx->{render}->base_vars(
         title => 'iczelia :: search',
@@ -239,7 +239,7 @@ sub _tag_index {
     tags => \@list,
   );
   return Iczelia::HTTP::html(
-    $ctx->{render}->{template}->render('views/tag_index.tpl', $vars));
+    $ctx->{template}->render('views/tag_index.tpl', $vars));
 }
 
 sub _tag_page {

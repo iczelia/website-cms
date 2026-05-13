@@ -148,7 +148,7 @@ sub register {
 
   # PGP public key. Admin uploads via /admin/pgp/ atomically rewrite
   # this file; we serve it back on /pub.pgp, 404 when not present.
-  my $var_dir = _var_dir_of($cfg);
+  my $var_dir = var_dir_of($cfg);
   $router->get(
     '/pub.pgp',
     sub {
@@ -174,7 +174,7 @@ sub _bad_path {Iczelia::HTTP::error(400, 'bad path')}
 
 # Mutable per-instance state dir (db, cookie-secret, pgp pubkey, ...),
 # derived from the configured db path.
-sub _var_dir_of {
+sub var_dir_of {
   my ($cfg) = @_;
   my $p = $cfg->{db};
   $p =~ s{[^/]+\z}{};

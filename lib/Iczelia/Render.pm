@@ -27,6 +27,34 @@ use constant SETTINGS_CACHE_TTL => 60;
 
 # DB rows -> markdown -> math substitution -> template render,
 # caching the final HTML back to the row's rendered_html column.
+#
+# Package layout (Iczelia::Render is split across 5 files; all reopen
+# this package):
+#   Render.pm            new, db/template/tex/cache accessors, base_vars,
+#                        _kappa_title, _first_content_img, _obfuscate_email,
+#                        _theme_css/_diff/_ok_color, _math_params,
+#                        _figure_params (this file).
+#   Render/Markup.pm     _md, _meta_desc, _para_with_text, _cook_page_data,
+#                        substitute_math.
+#   Render/Page.pm       render_home, render_page, render_post,
+#                        render_dynamic, render_kind_index/year, the four
+#                        render_blog_*/render_journal_* wrappers,
+#                        render_tag_page, render_tag_feed, render_not_found,
+#                        render_updates_full, _year_nav_data,
+#                        _kind_intro_html, _row_to_entry, _cached_page,
+#                        _cache_page, _post_list.
+#   Render/Assets.pm     _home_css.
+#   Render/Invalidate.pm invalidate_page, invalidate_post, invalidate_home,
+#                        invalidate_route, invalidate_all, _bust_for_page.
+#
+# Shared $self slots:
+#   db, template, tex, cache, cfg     facade-owned services (constructor-set)
+#   _settings_cache, _settings_at,    base_vars's settings memoization
+#   _theme_css_cache                  base_vars's theme CSS memoization
+#   _home_css                         Render/Assets owns this
+#
+# Helpers crossing file boundaries are called via $self->method or by
+# package name; readers can grep the manifest above to locate them.
 
 my %KAPPA_LABEL = (
   "\x{03c6}" => 'philosophy',
@@ -60,6 +88,11 @@ sub new {
   }, $class;
   return $self;
 }
+
+sub db       {$_[0]->{db}}
+sub template {$_[0]->{template}}
+sub tex      {$_[0]->{tex}}
+sub cache    {$_[0]->{cache}}
 
 sub base_vars {
   my ($self, %extra) = @_;

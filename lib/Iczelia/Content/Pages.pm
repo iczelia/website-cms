@@ -18,6 +18,10 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: get_page, save_page.
+# Reads $self slots: db, render.
+
 sub get_page {
   my ($self, $slug) = @_;
   return $self->{db}->row('SELECT * FROM pages WHERE slug=?', $slug);

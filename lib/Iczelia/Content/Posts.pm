@@ -20,6 +20,13 @@ use warnings;
 use Carp          qw(croak);
 use Iczelia::Util qw(slugify);
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: get_post, list_posts, create_post, update_post, delete_post,
+#   list_aliases, list_revisions, get_revision, delete_alias,
+#   normalize_publish_at (public; called from Handlers/Admin/Posts.pm),
+#   _word_count (private to this file).
+# Reads $self slots: db, render.
+
 sub get_post {
   my ($self, $kind, $slug) = @_;
   return $self->{db}
@@ -39,7 +46,7 @@ sub create_post {
   my ($self, $kind, $rec) = @_;
   my $base = $rec->{slug} || slugify($rec->{title}) || 'untitled-' . time;
   my $body = $rec->{body} // '';
-  my $publish_at = _normalize_publish_at($rec->{publish_at});
+  my $publish_at = normalize_publish_at($rec->{publish_at});
 
   # INSERT OR IGNORE in a loop avoids the SELECT-then-INSERT race that
   # otherwise lets two concurrent creators both pass the uniqueness
@@ -70,7 +77,7 @@ sub update_post {
   my ($self, $kind, $old_slug, $rec) = @_;
   my $base       = $rec->{slug} || $old_slug;
   my $body       = $rec->{body} // '';
-  my $publish_at = _normalize_publish_at($rec->{publish_at});
+  my $publish_at = normalize_publish_at($rec->{publish_at});
 
   # Slug uniqueness is resolved INSIDE tx_immediate so two concurrent
   # renames to the same target serialize and one suffixes correctly.
@@ -224,7 +231,7 @@ sub _word_count {
 
 # publish_at parser. Accepts undef/'' (immediate when not draft),
 # integer epoch seconds, or 'YYYY-MM-DDTHH:MM[:SS]' interpreted as UTC.
-sub _normalize_publish_at {
+sub normalize_publish_at {
   my ($v) = @_;
   return undef unless defined $v && length $v;
   if ($v =~ /^-?\d+$/) {

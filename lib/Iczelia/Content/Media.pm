@@ -18,6 +18,10 @@ package Iczelia::Content;
 use strict;
 use warnings;
 
+# Iczelia::Content fragment. Full package layout in Content.pm.
+# Provides: list_media, get_media, create_media, delete_media.
+# Reads $self slots: db.
+
 sub list_media {
   my ($self, $limit) = @_;
   $limit //= 200;
