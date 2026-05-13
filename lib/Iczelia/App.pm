@@ -26,6 +26,8 @@ use Iczelia::Tex;
 use Iczelia::Auth;
 use Iczelia::Cache;
 use Iczelia::Fetcher;
+use Iczelia::Schema;
+use Iczelia::Content;
 use Iczelia::Highlight;
 use Iczelia::Warmer;
 use Iczelia::Handlers::Public;
@@ -67,6 +69,10 @@ sub build {
   );
   my $fetcher =
     Iczelia::Fetcher->new(db => $db, render => $rnd, cache => $cache);
+  my $schema = Iczelia::Schema->new(
+    dir => $cfg->{'share-dir'} . '/templates/pages',
+  );
+  my $content = Iczelia::Content->new(db => $db, render => $rnd);
 
   my $router = Iczelia::Router->new;
   my $ctx    = {
@@ -77,6 +83,8 @@ sub build {
     auth     => $auth,
     cache    => $cache,
     fetcher  => $fetcher,
+    schema   => $schema,
+    content  => $content,
   };
   Iczelia::Handlers::Static->register($router, $ctx);
   Iczelia::Handlers::Honeypot->register($router, $ctx);

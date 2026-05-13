@@ -18,8 +18,6 @@ package Iczelia::Handlers::Admin;
 use strict;
 use warnings;
 use Iczelia::HTTP                       ();
-use Iczelia::Schema                     ();
-use Iczelia::Content                    ();
 use Iczelia::Time                       qw(ts_fmt);
 use Iczelia::Handlers::Admin::Activity  ();
 use Iczelia::Handlers::Admin::Cache     ();
@@ -34,14 +32,6 @@ use Iczelia::Handlers::Admin::Webring   ();
 
 sub register {
   my ($class, $router, $ctx) = @_;
-
-  # Hang the schema/content helpers off $ctx once per worker.
-  $ctx->{schema} ||=
-    Iczelia::Schema->new(dir => $ctx->{cfg}{'share-dir'} . '/templates/pages');
-  $ctx->{content} ||= Iczelia::Content->new(
-    db     => $ctx->{db},
-    render => $ctx->{render}
-  );
 
   $router->get('/admin/',      sub {_gate(\&_dashboard, $ctx, $_[0])});
   $router->get('/admin/login', sub {_login_form($ctx, $_[0])});
