@@ -773,10 +773,8 @@ sub base_vars {
     %meta = (%meta, %$o);
   }
 
-  # og:image: an explicit per-page override wins; else the first content
-  # image in the body (skipping LaTeX PNGs); else the site-wide card
-  # setting; else the logo. Resolved to an absolute URL below. Posts pass
-  # their body under `post`, pages/dynamic pages under `data`.
+  # og:image: explicit override, else first body image, else site card,
+  # else logo. Made absolute below. (posts use `post`, pages use `data`.)
   unless (length($meta{image} // '')) {
     my $post = ref $extra{post} eq 'HASH' ? $extra{post} : {};
     my $data = ref $extra{data} eq 'HASH' ? $extra{data} : {};
@@ -833,14 +831,46 @@ sub base_vars {
   };
 }
 
-# Plain-text excerpt of rendered HTML, for <meta name="description">
-# and og:description. Strips tags, decodes the handful of entities
-# Markup emits, collapses whitespace, truncates on a word boundary.
+# Section names that mark where the real prose starts.
+my $INTRO_HEADING_RE = qr{
+  \A \s* (?: \d+ [.)]? \s+ )?
+  (?: intro(?:duction)? | preliminaries | overview | background
+    | abstract | motivation | prologue | preface | context | tl;?dr )
+  \b
+}xi;
+
+# first <p> with non-empty text, or undef
+sub _para_with_text {
+  my ($html) = @_;
+  return undef unless defined $html;
+  while ($html =~ m{<p\b[^>]*>(.*?)</p\s*>}gis) {
+    my $c = $1;
+    (my $bare = $c) =~ s/<[^>]+>//g;
+    $bare =~ s/&\#?\w+;//g;
+    return $c if $bare =~ /\S/;
+  }
+  return undef;
+}
+
+# <meta description> / og:description: intro-section's first para, else
+# first para, else whole body; tags stripped, entities decoded, truncated.
 sub _meta_desc {
   my ($html, $n) = @_;
   $n ||= 160;
   return '' unless defined $html && length $html;
-  my $t = $html;
+
+  my $from = 0;
+  while ($html =~ m{<h[1-6]\b[^>]*>(.*?)</h[1-6]\s*>}gis) {
+    (my $ht = $1) =~ s/<[^>]+>//g;
+    $ht =~ s/&\#?\w+;/ /g;
+    $ht =~ s/^\s+//;
+    $ht =~ s/\s+/ /g;
+    if ($ht =~ $INTRO_HEADING_RE) {$from = pos($html); last}
+  }
+  my $t = ($from ? _para_with_text(substr($html, $from)) : undef)
+       // _para_with_text($html)
+       // $html;
+
   $t =~ s{<[^>]+>}{ }g;
   $t =~ s/&nbsp;/ /g;
   $t =~ s/&amp;/&/g;
@@ -848,9 +878,10 @@ sub _meta_desc {
   $t =~ s/&gt;/>/g;
   $t =~ s/&quot;/"/g;
   $t =~ s/&#0*39;|&apos;/'/g;
+  $t =~ s/&#x?[0-9A-Fa-f]+;/ /g;        # any remaining numeric entity
+  $t =~ s/&[A-Za-z][A-Za-z0-9]*;/ /g;   # any remaining named entity
   $t =~ s/\s+/ /g;
-  # Tags were replaced by a space, so inline ones (<em>, <a>, <code>)
-  # leave a gap before the next character. Tidy up around punctuation.
+  # inline tags became spaces; tidy the gap around punctuation
   $t =~ s/ +([.,;:!?)\]}\xbb\x{2026}"'])/$1/g;
   $t =~ s/([(\[{\xab]) +/$1/g;
   $t =~ s/^\s+//;
@@ -863,8 +894,7 @@ sub _meta_desc {
   return $t;
 }
 
-# First content <img> src in some rendered HTML, for og:image. Skips
-# rendered-LaTeX <img class="...math..."> so a formula PNG never wins.
+# first content <img> src, for og:image; skips rendered-LaTeX PNGs
 sub _first_content_img {
   my ($html) = @_;
   return '' unless defined $html && length $html;
