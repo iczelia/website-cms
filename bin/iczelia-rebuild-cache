@@ -72,7 +72,7 @@ eval {
   $sdb->disconnect;
 };
 
-eval {Iczelia::Handlers::Admin::_run_rebuild($cfg)};
+eval {Iczelia::Handlers::Admin::Cache::run_rebuild($cfg)};
 if ($@) {
   my $err = "$@";
   eval {

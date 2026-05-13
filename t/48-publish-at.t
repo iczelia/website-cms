@@ -83,7 +83,7 @@ ok(
 
 # 4. Validator: blank publish_at OK.
 require Iczelia::Handlers::Admin;
-my ($rec, $err) = Iczelia::Handlers::Admin::_validate_post(
+my ($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(
   {
     title      => 't',
     body       => 'b',
@@ -95,7 +95,7 @@ my ($rec, $err) = Iczelia::Handlers::Admin::_validate_post(
 ok($rec && !defined $rec->{publish_at}, 'blank publish_at -> undef');
 
 # 5. Validator: past publish_at -> rejected.
-($rec, $err) = Iczelia::Handlers::Admin::_validate_post(
+($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(
   {
     title      => 't',
     body       => 'b',
@@ -108,7 +108,7 @@ ok(!$rec, 'past publish_at rejected');
 like($err, qr/past/, 'past publish_at error message');
 
 # 6. Validator: future publish_at -> accepted, returned as epoch int.
-($rec, $err) = Iczelia::Handlers::Admin::_validate_post(
+($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(
   {
     title      => 't',
     body       => 'b',

@@ -89,7 +89,7 @@ is($db->one('SELECT COUNT(*) FROM tex_cache'),      1, 'tex_cache seeded');
 
 # Run the rebuild end-to-end (in-process; this is the same code the
 # detached daemon child invokes).
-Iczelia::Handlers::Admin::_run_rebuild($cfg);
+Iczelia::Handlers::Admin::Cache::run_rebuild($cfg);
 
 is($db->one('SELECT COUNT(*) FROM response_cache'), 0,
   'response_cache cleared by rebuild');
@@ -144,7 +144,7 @@ $db->do_('UPDATE posts SET rendered_html = ? WHERE slug=?',
   'stale-body', 'first');
 
 $db->set_setting('cache.rebuild.scope', 'html');
-Iczelia::Handlers::Admin::_run_rebuild($cfg);
+Iczelia::Handlers::Admin::Cache::run_rebuild($cfg);
 
 is($db->one('SELECT html FROM tex_cache WHERE hash=?', 'preserve'),
   '<svg id="keep"/>', 'scope=html preserves tex_cache rows');
@@ -297,7 +297,7 @@ my $req = {
   auth_sid => 'sid',
 };
 
-my $resp = Iczelia::Handlers::Admin::_cache_rebuild_cancel($ctx, $req);
+my $resp = Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($resp->{status}, 303, 'cancel returns a redirect');
 
 # The child's handler should observe SIGTERM, mark cancelled, exit.
@@ -316,7 +316,7 @@ is($db->setting('cache.rebuild.pid'),
 waitpid($pid, 0);
 
 # Idempotency: cancel when no rebuild is running just redirects.
-my $resp2 = Iczelia::Handlers::Admin::_cache_rebuild_cancel($ctx, $req);
+my $resp2 = Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($resp2->{status}, 303, 'cancel-on-idle redirects without doing anything');
 
 # === stale-pid recovery: process died without writing 'cancelled' ===
@@ -340,7 +340,7 @@ while (kill(0, $dead_pid) && $tries++ < 20) {
 }
 $db->set_setting('cache.rebuild.pid', $dead_pid);
 
-my $resp3 = Iczelia::Handlers::Admin::_cache_rebuild_cancel($ctx, $req);
+my $resp3 = Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($resp3->{status}, 303, 'cancel returns redirect when pid is stale');
 is($db->setting('cache.rebuild.phase'),
   'cancelled', 'stale pid is force-cleared to cancelled');
@@ -372,7 +372,7 @@ $db->set_setting('cache.rebuild.finished_at', 0);
 
 # First click: TERM. The child ignores it, so the cancel handler
 # just transitions phase to cancelling and leaves the pid alone.
-Iczelia::Handlers::Admin::_cache_rebuild_cancel($ctx, $req);
+Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($db->setting('cache.rebuild.phase'),
   'cancelling', 'first click transitions to cancelling');
 ok($db->setting('cache.rebuild.pid') == $stubborn_pid,
@@ -380,7 +380,7 @@ ok($db->setting('cache.rebuild.pid') == $stubborn_pid,
 
 # Second click: stubborn child still alive AND phase=cancelling.
 # Endpoint must escalate to KILL and force-clear.
-Iczelia::Handlers::Admin::_cache_rebuild_cancel($ctx, $req);
+Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($db->setting('cache.rebuild.phase'),
   'cancelled', 'second click force-clears phase=cancelled');
 is($db->setting('cache.rebuild.pid'),
