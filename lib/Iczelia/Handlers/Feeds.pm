@@ -19,7 +19,8 @@ use strict;
 use warnings;
 use utf8;
 use Iczelia::HTTP ();
-use Iczelia::Util qw(escape_html fmt_iso);
+use Iczelia::Util qw(escape_html);
+use Iczelia::Time qw(fmt_iso);
 use Iczelia::Handlers::Honeypot ();
 
 # Feeds: Atom (/feed.xml), RSS 2.0 (/index.xml, /rss.xml), sitemap, and

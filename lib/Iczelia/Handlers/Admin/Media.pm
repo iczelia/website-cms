@@ -20,6 +20,7 @@ use warnings;
 use JSON::PP      ();
 use Iczelia::HTTP ();
 use Iczelia::Media();
+use Iczelia::Time qw(ts_fmt);
 
 use constant MEDIA_BODY_MAX => 4 * 1024 * 1024;
 
@@ -54,7 +55,7 @@ sub _media_list {
       $r->{thumb_filename}
       ? '/media/' . $r->{thumb_filename}
       : $r->{url};
-    $r->{date_fmt} = Iczelia::Handlers::Admin::ts_fmt($r->{uploaded_at});
+    $r->{date_fmt} = ts_fmt($r->{uploaded_at});
     $r->{size_kb}  = sprintf('%.0f', ($r->{size} || 0) / 1024);
     $r->{csrf_del} = $ctx->{auth}->csrf_token($sid, "media:del:$r->{id}");
   }

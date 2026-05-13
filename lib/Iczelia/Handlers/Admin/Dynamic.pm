@@ -18,6 +18,7 @@ package Iczelia::Handlers::Admin::Dynamic;
 use strict;
 use warnings;
 use Iczelia::HTTP                   ();
+use Iczelia::Time                   qw(ts_fmt);
 use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
@@ -36,7 +37,7 @@ sub _dynamic_list {
   my $rows = $ctx->{content}->list_dynamic_pages;
   my $sid  = $req->{auth_sid};
   for my $r (@$rows) {
-    $r->{updated_fmt} = Iczelia::Handlers::Admin::ts_fmt($r->{updated_at});
+    $r->{updated_fmt} = ts_fmt($r->{updated_at});
     $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "dynpage:del:$r->{id}");
   }
   return Iczelia::HTTP::html(

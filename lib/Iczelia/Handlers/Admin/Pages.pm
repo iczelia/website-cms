@@ -18,6 +18,7 @@ package Iczelia::Handlers::Admin::Pages;
 use strict;
 use warnings;
 use Iczelia::HTTP                   ();
+use Iczelia::Time                   qw(ts_fmt);
 use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
@@ -55,8 +56,7 @@ sub _edit_page {
       page      => {
         slug        => $slug,
         template    => $page->{template},
-        updated_fmt =>
-          Iczelia::Handlers::Admin::ts_fmt($page->{updated_at}),
+        updated_fmt => ts_fmt($page->{updated_at}),
       },
       fields => \@fields,
     )

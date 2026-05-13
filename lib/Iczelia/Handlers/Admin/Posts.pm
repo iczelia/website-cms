@@ -19,6 +19,7 @@ use strict;
 use warnings;
 use Iczelia::HTTP    ();
 use Iczelia::Util    ();
+use Iczelia::Time    qw(ts_fmt ts_to_local_input);
 use Iczelia::Content ();
 
 use constant POST_BODY_MAX => 256 * 1024;
@@ -106,17 +107,16 @@ sub _render_post_form {
     body           => $post->{body},
     draft          => $post->{draft},
     publish_at     => $post->{publish_at},
-    publish_at_fmt =>
-      Iczelia::Handlers::Admin::ts_to_local_input($post->{publish_at}),
+    publish_at_fmt => ts_to_local_input($post->{publish_at}),
     word_count     => $post->{word_count} // 0,
-    updated_fmt    => Iczelia::Handlers::Admin::ts_fmt($post->{updated_at}),
+    updated_fmt    => ts_fmt($post->{updated_at}),
     aliases        => $aliases,
     }
     : {
     id             => 0,
     slug           => '',
     title          => '',
-    date           => Iczelia::Handlers::Admin::ts_fmt(time),
+    date           => ts_fmt(time),
     tags           => '',
     body           => '',
     draft          => 0,
@@ -228,8 +228,7 @@ sub _revisions_list {
   );
   my $sid = $req->{auth_sid};
   for my $r (@$rows) {
-    $r->{created_fmt}  =
-      Iczelia::Handlers::Admin::ts_fmt($r->{created_at});
+    $r->{created_fmt}  = ts_fmt($r->{created_at});
     $r->{csrf_restore} = $ctx->{auth}
       ->csrf_token($sid, "rev-restore:$kind:$slug:$r->{revision_num}");
   }
@@ -260,7 +259,7 @@ sub _revisions_view {
     $post->{id}, $rev);
   return Iczelia::HTTP::error(404) unless $row;
   my $sid = $req->{auth_sid};
-  $row->{created_fmt} = Iczelia::Handlers::Admin::ts_fmt($row->{created_at});
+  $row->{created_fmt} = ts_fmt($row->{created_at});
   return Iczelia::HTTP::html(
     $ctx->{template}->render(
       'views/admin_post_revision_view.tpl',

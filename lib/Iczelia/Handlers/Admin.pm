@@ -20,6 +20,7 @@ use warnings;
 use Iczelia::HTTP                       ();
 use Iczelia::Schema                     ();
 use Iczelia::Content                    ();
+use Iczelia::Time                       qw(ts_fmt);
 use Iczelia::Handlers::Admin::Activity  ();
 use Iczelia::Handlers::Admin::Cache     ();
 use Iczelia::Handlers::Admin::Dynamic   ();
@@ -111,24 +112,6 @@ sub _admin_vars {
   };
 }
 *admin_vars = \&_admin_vars;
-
-sub _ts_fmt {
-  my ($ts) = @_;
-  return '' unless defined $ts;
-  my @t = localtime $ts;
-  return sprintf '%04d-%02d-%02d', $t[5] + 1900, $t[4] + 1, $t[3];
-}
-*ts_fmt = \&_ts_fmt;
-
-# Unix timestamp -> 'YYYY-MM-DDTHH:MM' (UTC) for a datetime-local input.
-sub _ts_to_local_input {
-  my ($ts) = @_;
-  return '' unless defined $ts && length $ts;
-  my @t = gmtime $ts;
-  return sprintf '%04d-%02d-%02dT%02d:%02d',
-    $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1];
-}
-*ts_to_local_input = \&_ts_to_local_input;
 
 sub _login_form {
   my ($ctx, $req) = @_;
@@ -223,7 +206,7 @@ sub _dashboard {
   my $pages =
     $db->all(q{SELECT slug, title, updated_at FROM pages ORDER BY slug});
   for my $p (@$pages) {
-    $p->{updated_fmt} = _ts_fmt($p->{updated_at});
+    $p->{updated_fmt} = ts_fmt($p->{updated_at});
   }
   my $blog = $db->all(
     q{SELECT slug, title, date, draft FROM posts

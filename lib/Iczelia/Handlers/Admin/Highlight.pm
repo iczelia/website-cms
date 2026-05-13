@@ -19,6 +19,7 @@ use strict;
 use warnings;
 use Iczelia::HTTP      ();
 use Iczelia::Highlight ();
+use Iczelia::Time      qw(ts_fmt);
 
 sub register {
   my ($class, $router, $ctx) = @_;
@@ -36,7 +37,7 @@ sub _lang_list {
   my $rows = $ctx->{content}->list_langs;
   my $sid  = $req->{auth_sid};
   for my $r (@$rows) {
-    $r->{updated_fmt} = Iczelia::Handlers::Admin::ts_fmt($r->{updated_at});
+    $r->{updated_fmt} = ts_fmt($r->{updated_at});
     $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "lang:del:$r->{id}");
   }
   my @builtins = Iczelia::Highlight::languages();

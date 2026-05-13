@@ -18,6 +18,7 @@ package Iczelia::Handlers::Admin::PGP;
 use strict;
 use warnings;
 use Iczelia::HTTP                   ();
+use Iczelia::Time                   qw(ts_fmt);
 use Iczelia::Handlers::Admin::Forms qw(simple_form_render_html);
 
 use constant PGP_BODY_MAX => 256 * 1024;
@@ -48,7 +49,7 @@ sub _pgp_form {
     '<p>The key uploaded here is served at <code>/pub.pgp</code> with content-type <code>application/pgp-keys</code>.</p>';
   if ($size) {
     push @bits, sprintf '<p>Currently installed: %d bytes, uploaded %s.</p>',
-      $size, Iczelia::Handlers::Admin::ts_fmt($mtime);
+      $size, ts_fmt($mtime);
   }
   else {
     push @bits,

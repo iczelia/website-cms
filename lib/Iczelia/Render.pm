@@ -20,7 +20,8 @@ use warnings;
 use Carp            qw(croak);
 use JSON::PP        ();
 use Encode          ();
-use Iczelia::Util   qw(escape_html escape_attr fmt_date fmt_ago);
+use Iczelia::Util   qw(escape_html escape_attr);
+use Iczelia::Time   qw(fmt_date fmt_ago atom_iso clock_string);
 use Iczelia::Markup ();
 use Iczelia::Minify ();
 
@@ -191,7 +192,7 @@ sub render_home {
       github_compact => $github_compact,
     },
     blog_teaser => $teaser_v,
-    clock       => _clock_string(),
+    clock       => clock_string(),
     home_css    => $self->_home_css,
   );
 
@@ -395,7 +396,7 @@ sub render_post {
       description     => _meta_desc($body_html),
       keywords       => join(', ', @tags),
       published_time => ($row->{date} // ''),
-      modified_time  => ($row->{updated_at} ? _atom_iso($row->{updated_at}) : ''),
+      modified_time  => ($row->{updated_at} ? atom_iso($row->{updated_at}) : ''),
     },
     post => {
       title       => $row->{title},
@@ -703,12 +704,12 @@ sub render_tag_feed {
   push @bits,
     qq{  <link rel="self" href="} . escape_attr($self_url) . qq{" />\n};
   push @bits, qq{  <id>} . escape_attr($self_url) . qq{</id>\n};
-  push @bits, qq{  <updated>} . _atom_iso($latest_ts) . qq{</updated>\n};
+  push @bits, qq{  <updated>} . atom_iso($latest_ts) . qq{</updated>\n};
 
   for my $r (@match) {
     my $url       = "$base/$kind/$r->{slug}/";
     my $te        = escape_html($r->{title});
-    my $upd       = _atom_iso($r->{updated_at} || time);
+    my $upd       = atom_iso($r->{updated_at} || time);
     my $body_html = $self->_md($r->{body});
     my $body_esc  = escape_html($body_html);
     push @bits, qq{  <entry>\n};
@@ -721,13 +722,6 @@ sub render_tag_feed {
   }
   push @bits, qq{</feed>\n};
   return join '', @bits;
-}
-
-sub _atom_iso {
-  my ($ts) = @_;
-  my @t = gmtime($ts || time);
-  return sprintf '%04d-%02d-%02dT%02d:%02d:%02dZ',
-    $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0];
 }
 
 sub _url_seg {
@@ -1292,14 +1286,6 @@ sub _decode_data {
   return {} unless defined $s && length $s;
   my $r = eval {$JSON->decode($s)};
   return ref($r) eq 'HASH' ? $r : {};
-}
-
-sub _clock_string {
-  my @t  = gmtime(time);
-  my @wd = qw(Sun Mon Tue Wed Thu Fri Sat);
-  my @mn = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-  return sprintf '%s%d%s%d, %02d:%02d GMT',
-    $wd[$t[6]], $t[3], $mn[$t[4]], $t[5] + 1900, $t[2], $t[1];
 }
 
 1;

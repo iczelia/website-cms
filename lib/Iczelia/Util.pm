@@ -23,7 +23,6 @@ use Encode   ();
 our @EXPORT_OK = qw(
   escape_html escape_attr escape_url
   slugify trim
-  fmt_date fmt_iso fmt_ago
   excerpt
   detect_cores
 );
@@ -80,37 +79,6 @@ sub trim {
   $s =~ s/^\s+//;
   $s =~ s/\s+$//;
   return $s;
-}
-
-sub fmt_date {
-  my $s = shift;
-  return '' unless defined $s;
-  if ($s =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-    return "$2.$3.$1";
-  }
-  return $s;
-}
-
-sub fmt_iso {
-  my $epoch = shift;
-  return '' unless defined $epoch;
-  my @t = gmtime($epoch);
-  return sprintf '%04d-%02d-%02dT%02d:%02d:%02dZ',
-    $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0];
-}
-
-sub fmt_ago {
-  my $epoch = shift;
-  return '' unless defined $epoch;
-  my $now = time;
-  my $d   = $now - $epoch;
-  return 'now'                      if $d < 60;
-  return int($d / 60) . 'm ago'     if $d < 60 * 60;
-  return int($d / 3600) . 'h ago'   if $d < 60 * 60 * 24;
-  return int($d / 86400) . 'd ago'  if $d < 60 * 60 * 24 * 14;
-  return int($d / 604800) . 'w ago' if $d < 60 * 60 * 24 * 56;
-  my @t = localtime($epoch);
-  return sprintf '%04d-%02d-%02d', $t[5] + 1900, $t[4] + 1, $t[3];
 }
 
 sub excerpt {

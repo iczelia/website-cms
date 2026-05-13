@@ -20,6 +20,7 @@ use warnings;
 use File::Spec    ();
 use Carp          qw(croak);
 use Iczelia::Util ();
+use Iczelia::Time ();
 
 # Template DSL:
 #   {{ x }} / {{{ x }}}        escaped / raw expression
@@ -29,9 +30,9 @@ use Iczelia::Util ();
 # Compiles once per file; cache mtime-checks each lookup.
 
 my %FUNCS = (
-  fmt_date  => sub {Iczelia::Util::fmt_date($_[0])},
-  fmt_iso   => sub {Iczelia::Util::fmt_iso($_[0])},
-  fmt_ago   => sub {Iczelia::Util::fmt_ago($_[0])},
+  fmt_date  => sub {Iczelia::Time::fmt_date($_[0])},
+  fmt_iso   => sub {Iczelia::Time::fmt_iso($_[0])},
+  fmt_ago   => sub {Iczelia::Time::fmt_ago($_[0])},
   excerpt   => sub {Iczelia::Util::excerpt($_[0], $_[1])},
   count     => sub {ref $_[0] eq 'ARRAY' ? scalar @{$_[0]}    : 0},
   reverse   => sub {ref $_[0] eq 'ARRAY' ? [reverse @{$_[0]}] : ''},
