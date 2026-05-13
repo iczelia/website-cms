@@ -32,7 +32,13 @@ jobs:
             texlive-latex-base texlive-latex-recommended
             texlive-fonts-recommended texlive-latex-extra
             dvisvgm dvipng brotli curl
-          version: 1
+          version: 2
+
+      - name: rebuild TeX format files
+        run: |
+          sudo update-fmtutil || true
+          sudo fmtutil-sys --all || true
+          sudo mktexlsr || true
 
       - name: set up perl ${{ matrix.perl }}
         uses: shogo82148/actions-setup-perl@v1
