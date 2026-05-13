@@ -17,25 +17,24 @@
 package Iczelia::Content;
 use strict;
 use warnings;
-use Carp qw(croak);
 
-# CRUD over pages, posts, updates, activity, webring, settings.
-# Mutating methods invalidate caches via the injected $render.
-
-sub new {
-  my ($class, %arg) = @_;
-  croak "db required"     unless $arg{db};
-  croak "render required" unless $arg{render};
-  return bless {db => $arg{db}, render => $arg{render}}, $class;
+sub get_page {
+  my ($self, $slug) = @_;
+  return $self->{db}->row('SELECT * FROM pages WHERE slug=?', $slug);
 }
 
-require Iczelia::Content::Pages;
-require Iczelia::Content::Posts;
-require Iczelia::Content::Dynamic;
-require Iczelia::Content::Langs;
-require Iczelia::Content::Media;
-require Iczelia::Content::Activity;
-require Iczelia::Content::Webring;
-require Iczelia::Content::Settings;
+sub save_page {
+  my ($self, $slug, $title, $template, $data_json) = @_;
+  $self->{db}->do_(
+    q{
+        UPDATE pages
+           SET title=?, template=?, data=?, rendered_html=NULL,
+               updated_at=strftime('%s','now')
+         WHERE slug=?},
+    $title, $template, $data_json, $slug
+  );
+  $self->{render}->invalidate_page($slug);
+  $self->{render}->invalidate_home if $slug ne 'home';
+}
 
 1;
