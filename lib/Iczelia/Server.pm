@@ -558,6 +558,11 @@ sub _cache_key_for {
   # caching would leak one user's token to everyone else.
   return undef if $path =~ m{^/guestbook/?$};
   return undef if $req->{cookies} && exists $req->{cookies}{iczelia_sid};
+
+  # Chrome image packs dispatch avif/png by Accept and emit Vary: Accept.
+  # The internal cache keys by path alone and stamps a fixed Vary, so
+  # leave it to nginx (which honours Vary) to split these.
+  return undef if $path =~ m{^/assets-(?:1024x768|800x600|600x400|about)/};
   return $path;
 }
 

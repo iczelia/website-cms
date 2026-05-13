@@ -37,6 +37,7 @@ my %CT = (
   'gif'         => 'image/gif',
   'svg'         => 'image/svg+xml',
   'webp'        => 'image/webp',
+  'avif'        => 'image/avif',
   'ico'         => 'image/x-icon',
   'woff'        => 'font/woff',
   'woff2'       => 'font/woff2',
@@ -95,12 +96,15 @@ sub register {
     )
     )
   {
-    my ($prefix) = $pat =~ m{^/([^/]+)};
+    my ($prefix)      = $pat =~ m{^/([^/]+)};
+    my $is_image_pack = $prefix =~ /^assets-/;
     $router->get(
       $pat,
       sub {
         my $req = shift;
-        _serve_safe($r_chrome, "$prefix/" . $req->{caps}{rest});
+        my $rel = "$prefix/" . $req->{caps}{rest};
+        return _serve_safe($r_chrome, $rel) unless $is_image_pack;
+        return _serve_image_pick($r_chrome, $rel, $req);
       }
     );
   }
@@ -176,6 +180,35 @@ sub _var_dir_of {
   $p =~ s{[^/]+\z}{};
   $p =~ s{/+\z}{};
   return $p;
+}
+
+# Extension-less chrome image: serve .avif if the UA accepts it and a
+# sibling exists, else .png. Vary: Accept so the edge cache splits.
+sub _serve_image_pick {
+  my ($root, $rel, $req) = @_;
+  if ($rel =~ /\.[a-z0-9]+$/i) {
+    my $r = _serve_safe($root, $rel);
+    _stamp_vary_accept($r);
+    return $r;
+  }
+  my $accept = ($req->{headers}{accept} // '');
+  my @tries = $accept =~ m{image/avif}i ? ("$rel.avif", "$rel.png") : ("$rel.png");
+  for my $cand (@tries) {
+    my $r = _serve_safe($root, $cand);
+    if (($r->{status} // 0) == 200) {
+      _stamp_vary_accept($r);
+      return $r;
+    }
+  }
+  return Iczelia::HTTP::error(404);
+}
+
+sub _stamp_vary_accept {
+  my ($r) = @_;
+  return unless $r && ref $r eq 'HASH';
+  $r->{headers} ||= {};
+  my $v = $r->{headers}{Vary};
+  $r->{headers}{Vary} = defined $v && length $v ? "$v, Accept" : 'Accept';
 }
 
 # Serve $root/$rel only if it resolves (after symlinks) to something
