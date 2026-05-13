@@ -17,10 +17,11 @@
 package Iczelia::Fetcher;
 use strict;
 use warnings;
-use Carp       qw(croak);
-use JSON::PP   ();
-use IPC::Open3 ();
-use Symbol     qw(gensym);
+use Carp          qw(croak);
+use JSON::PP      ();
+use IPC::Open3    ();
+use Symbol        qw(gensym);
+use Iczelia::Util ();
 
 # Pulls public events from GitHub/Mastodon/Bluesky into `activity`.
 # Cron-driven and admin-triggerable; HTTP via curl so TLS stays out of
@@ -263,7 +264,7 @@ sub _fetch_mastodon {
     $title = _strip_cdata($title // '');
     $link  = _strip_cdata($link  // '');
     my $when  = _parse_rfc2822($pub);
-    my $short = _excerpt($title, 60);
+    my $short = Iczelia::Util::excerpt($title, 60, html => 0);
     push @items,
       {
       text      => length $short ? "last post: $short" : 'last post',
@@ -312,7 +313,7 @@ sub _fetch_bluesky {
     next if $post->{record}{reply};
     my $text  = $post->{record}{text} // '';
     my $when  = _parse_iso($post->{indexedAt} // $post->{record}{createdAt});
-    my $short = _excerpt($text, 60);
+    my $short = Iczelia::Util::excerpt($text, 60, html => 0);
     my $rkey;
     if ($post->{uri} && $post->{uri} =~ m{/app\.bsky\.feed\.post/([^/]+)$}) {
       $rkey = $1;
@@ -332,20 +333,6 @@ sub _fetch_bluesky {
       };
   }
   return @rows;
-}
-
-sub _excerpt {
-  my ($s, $n) = @_;
-  return '' unless defined $s;
-  $s =~ s/\s+/ /g;
-  $s =~ s/^\s+//;
-  $s =~ s/\s+$//;
-  if (length $s > $n) {
-    $s = substr($s, 0, $n);
-    $s =~ s/\s+\S*$//;
-    $s .= '...';
-  }
-  return $s;
 }
 
 # Parse ISO-8601 like 2026-04-21T10:11:12Z (lenient on separators).

@@ -18,9 +18,7 @@ package Iczelia::Render;
 use strict;
 use warnings;
 use Carp            qw(croak);
-use JSON::PP        ();
-use Encode          ();
-use Iczelia::Util   qw(escape_html escape_attr);
+use Iczelia::Util   qw(escape_html escape_attr clamp_int clamp_flt decode_json_hash);
 use Iczelia::Time   qw(fmt_date fmt_ago atom_iso clock_string);
 use Iczelia::Markup ();
 use Iczelia::Minify ();
@@ -29,8 +27,6 @@ use constant SETTINGS_CACHE_TTL => 60;
 
 # DB rows -> markdown -> math substitution -> template render,
 # caching the final HTML back to the row's rendered_html column.
-
-my $JSON = JSON::PP->new->utf8(0)->canonical(1);
 
 my %KAPPA_LABEL = (
   "\x{03c6}" => 'philosophy',
@@ -314,11 +310,11 @@ sub _math_params {
   my ($s) = @_;
   my $m = $s->{math} || {};
   return (
-    dpi          => _num($m->{dpi},         120, 60, 240),
-    inline_pt    => _num($m->{inline_pt},   10,  6,  18),
-    display_pt   => _num($m->{display_pt},  11,  6,  20),
-    glow_radius  => _num($m->{glow_radius}, 2,   0,  8),
-    glow_opacity => _flt($m->{glow_opacity}, 0.55, 0, 1),
+    dpi          => clamp_int($m->{dpi},         120, 60, 240),
+    inline_pt    => clamp_int($m->{inline_pt},   10,  6,  18),
+    display_pt   => clamp_int($m->{display_pt},  11,  6,  20),
+    glow_radius  => clamp_int($m->{glow_radius}, 2,   0,  8),
+    glow_opacity => clamp_flt($m->{glow_opacity}, 0.55, 0, 1),
   );
 }
 
@@ -331,24 +327,6 @@ sub _figure_params {
   );
 }
 
-sub _num {
-  my ($v, $def, $min, $max) = @_;
-  return $def unless defined $v && $v =~ /\A-?\d+\z/;
-  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
-}
-
-sub _flt {
-  my ($v, $def, $min, $max) = @_;
-  return $def unless defined $v && $v =~ /\A-?\d+(?:\.\d+)?\z/;
-  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
-}
-
-sub _decode_data {
-  my $s = shift;
-  return {} unless defined $s && length $s;
-  my $r = eval {$JSON->decode($s)};
-  return ref($r) eq 'HASH' ? $r : {};
-}
 
 require Iczelia::Render::Markup;
 require Iczelia::Render::Invalidate;

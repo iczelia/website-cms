@@ -24,7 +24,7 @@ use File::Temp    ();
 use MIME::Base64  ();
 use POSIX         ();
 use Time::HiRes   ();
-use Iczelia::Util qw(escape_html escape_attr);
+use Iczelia::Util qw(escape_html escape_attr clamp_int clamp_flt);
 
 # Render LaTeX math to vector SVG embedded as a data: URL. The cache
 # hash folds in render settings so an admin tweak invalidates cleanly.
@@ -88,31 +88,19 @@ sub _settings {
     $s{$k} = $r->{value};
   }
   my $cfg = {
-    dpi        => _clamp_int($s{dpi},        DPI, 60, 240),
-    inline_pt  => _clamp_int($s{inline_pt},  10,  6,  18),
-    display_pt => _clamp_int($s{display_pt}, 11,  6,  20),
+    dpi        => clamp_int($s{dpi},        DPI, 60, 240),
+    inline_pt  => clamp_int($s{inline_pt},  10,  6,  18),
+    display_pt => clamp_int($s{display_pt}, 11,  6,  20),
 
     # Unused by the SVG pipeline; kept in cache_key so legacy
     # rows invalidate when an admin changes them.
-    glow_radius  => _clamp_int($s{glow_radius}, 0, 0, 8),
-    glow_opacity => _clamp_flt($s{glow_opacity}, 0, 0, 1),
-    supersample  => _clamp_int($s{supersample}, 1, 1, 4),
+    glow_radius  => clamp_int($s{glow_radius}, 0, 0, 8),
+    glow_opacity => clamp_flt($s{glow_opacity}, 0, 0, 1),
+    supersample  => clamp_int($s{supersample}, 1, 1, 4),
   };
   $self->{_settings_cache} = $cfg;
   $self->{_settings_at}    = $now;
   return $cfg;
-}
-
-sub _clamp_int {
-  my ($v, $def, $min, $max) = @_;
-  return $def unless defined $v && $v =~ /\A-?\d+\z/;
-  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
-}
-
-sub _clamp_flt {
-  my ($v, $def, $min, $max) = @_;
-  return $def unless defined $v && $v =~ /\A-?\d+(?:\.\d+)?\z/;
-  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
 }
 
 # article{} only ships 10/11/12pt; extarticle covers the rest.

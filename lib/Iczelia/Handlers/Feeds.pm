@@ -20,7 +20,7 @@ use warnings;
 use utf8;
 use Iczelia::HTTP ();
 use Iczelia::Util qw(escape_html);
-use Iczelia::Time qw(fmt_iso);
+use Iczelia::Time qw(fmt_iso http_date_of);
 use Iczelia::Handlers::Honeypot ();
 
 # Feeds: Atom (/feed.xml), RSS 2.0 (/index.xml, /rss.xml), sitemap, and
@@ -145,25 +145,11 @@ sub _cdata_escape {
   return $s;
 }
 
-# RFC 822 date: "Sat, 20 Apr 2026 00:00:00 GMT".
-sub _rss_date {
-  my $epoch = shift;
-  return '' unless defined $epoch;
-  my @t  = gmtime($epoch);
-  my @wd = qw(Sun Mon Tue Wed Thu Fri Sat);
-  my @mn = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-  return sprintf '%s, %02d %s %d %02d:%02d:%02d GMT',
-    $wd[$t[6]], $t[3], $mn[$t[4]], $t[5] + 1900, $t[2], $t[1], $t[0];
-}
-
 sub _rss_date_from_iso {
   my $d = shift // '';
-  if ($d =~ /^(\d{4})-(\d{2})-(\d{2})/) {
-    require Time::Local;
-    my $epoch = Time::Local::timegm(0, 0, 0, $3, $2 - 1, $1);
-    return _rss_date($epoch);
-  }
-  return $d;
+  return $d unless $d =~ /^(\d{4})-(\d{2})-(\d{2})/;
+  require Time::Local;
+  return http_date_of(Time::Local::timegm(0, 0, 0, $3, $2 - 1, $1));
 }
 
 sub _rss {
@@ -198,7 +184,7 @@ sub _rss {
   push @bits,
     '<description>' . escape_html("$title - blog feed") . '</description>';
   push @bits, '<language>en</language>';
-  push @bits, '<lastBuildDate>' . _rss_date($latest_ts) . '</lastBuildDate>';
+  push @bits, '<lastBuildDate>' . http_date_of($latest_ts) . '</lastBuildDate>';
   push @bits,
       '<atom:link href="'
     . escape_html("$base/index.xml")

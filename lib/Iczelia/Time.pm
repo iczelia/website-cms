@@ -21,7 +21,10 @@ use Exporter qw(import);
 
 # Centralised time/date formatters used across the CMS.
 
-our @EXPORT_OK = qw(fmt_date fmt_iso fmt_ago ts_fmt ts_to_local_input atom_iso clock_string);
+our @EXPORT_OK = qw(fmt_date fmt_iso fmt_ago ts_fmt ts_to_local_input atom_iso clock_string http_date http_date_of);
+
+my @WD = qw(Sun Mon Tue Wed Thu Fri Sat);
+my @MN = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
 
 sub fmt_date {
   my $s = shift;
@@ -77,11 +80,18 @@ sub atom_iso {
 }
 
 sub clock_string {
-  my @t  = gmtime(time);
-  my @wd = qw(Sun Mon Tue Wed Thu Fri Sat);
-  my @mn = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
+  my @t = gmtime(time);
   return sprintf '%s%d%s%d, %02d:%02d GMT',
-    $wd[$t[6]], $t[3], $mn[$t[4]], $t[5] + 1900, $t[2], $t[1];
+    $WD[$t[6]], $t[3], $MN[$t[4]], $t[5] + 1900, $t[2], $t[1];
+}
+
+sub http_date {http_date_of(time)}
+
+sub http_date_of {
+  my ($t) = @_;
+  my @g = gmtime($t);
+  return sprintf '%s, %02d %s %d %02d:%02d:%02d GMT',
+    $WD[$g[6]], $g[3], $MN[$g[4]], $g[5] + 1900, $g[2], $g[1], $g[0];
 }
 
 1;

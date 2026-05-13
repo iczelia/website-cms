@@ -17,9 +17,10 @@
 package Iczelia::Schema;
 use strict;
 use warnings;
-use Carp       qw(croak);
-use JSON::PP   ();
-use File::Spec ();
+use Carp          qw(croak);
+use JSON::PP      ();
+use File::Spec    ();
+use Iczelia::Util ();
 
 # Per-template page schemas (share/templates/pages/<tpl>.json) and
 # admin-form -> typed-record parsing. parse_form -> (\%data, \%errs).
@@ -135,9 +136,7 @@ sub encode {
 
 sub decode {
   my ($self, $s) = @_;
-  return {} unless defined $s && length $s;
-  my $r = eval {JSON::PP->new->utf8(0)->decode($s)};
-  return ref($r) eq 'HASH' ? $r : {};
+  return Iczelia::Util::decode_json_hash($s);
 }
 
 1;

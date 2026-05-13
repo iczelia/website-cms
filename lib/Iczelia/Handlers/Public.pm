@@ -18,7 +18,7 @@ package Iczelia::Handlers::Public;
 use strict;
 use warnings;
 use Iczelia::HTTP ();
-use Iczelia::Util qw(escape_url);
+use Iczelia::Util qw(escape_url split_tags);
 
 sub register {
   my ($class, $router, $ctx) = @_;
@@ -220,10 +220,7 @@ sub _tag_index {
   );
   my %count;
   for my $r (@$rows) {
-    for my $t (split /\s*,\s*/, ($r->{tags} || '')) {
-      next unless length $t;
-      $count{$t}++;
-    }
+    $count{$_}++ for split_tags($r->{tags});
   }
   my @list = map +{
     tag   => $_,

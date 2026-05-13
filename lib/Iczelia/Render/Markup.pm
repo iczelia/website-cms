@@ -17,8 +17,8 @@
 package Iczelia::Render;
 use strict;
 use warnings;
-use Encode          ();
 use Iczelia::Markup ();
+use Iczelia::Util   ();
 
 my $INTRO_HEADING_RE = qr{
   \A \s* (?: \d+ [.)]? \s+ )?
@@ -78,14 +78,6 @@ sub _meta_desc {
   return $t;
 }
 
-sub _utf8 {
-  my ($s) = @_;
-  return '' unless defined $s;
-  return $s if Encode::is_utf8($s);
-  my $decoded = eval {Encode::decode('UTF-8', $s, Encode::FB_DEFAULT())};
-  return defined $decoded ? $decoded : $s;
-}
-
 sub _cook_page_data {
   my ($self, $template, $data) = @_;
   my %out = %$data;
@@ -123,7 +115,7 @@ sub _cook_page_data {
 sub _md {
   my ($self, $src, %opt) = @_;
   return '' unless defined $src && length $src;
-  $src = _utf8($src);
+  $src = Iczelia::Util::to_utf8($src);
   if ($opt{inline}) {
     my $html = Iczelia::Markup::render_inline($src);
     return $self->substitute_math($html, []);

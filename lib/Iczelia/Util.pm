@@ -25,6 +25,10 @@ our @EXPORT_OK = qw(
   slugify trim
   excerpt
   detect_cores
+  to_utf8
+  clamp_int clamp_flt
+  decode_json_hash
+  split_tags
 );
 
 # /proc/cpuinfo CPU count, falling back to 1.
@@ -48,7 +52,7 @@ sub escape_html {
   return $s;
 }
 
-sub escape_attr {goto &escape_html}
+{no warnings 'once'; *escape_attr = \&escape_html}
 
 sub escape_url {
   my $s = shift;
@@ -82,10 +86,10 @@ sub trim {
 }
 
 sub excerpt {
-  my ($s, $n) = @_;
+  my ($s, $n, %opt) = @_;
   $n ||= 200;
   return '' unless defined $s;
-  $s =~ s/<[^>]+>//g;
+  $s =~ s/<[^>]+>//g unless defined $opt{html} && !$opt{html};
   $s =~ s/\s+/ /g;
   $s = trim($s);
   if (length($s) > $n) {
@@ -94,6 +98,40 @@ sub excerpt {
     $s .= '...';
   }
   return $s;
+}
+
+sub to_utf8 {
+  my ($s) = @_;
+  return '' unless defined $s;
+  return $s if Encode::is_utf8($s);
+  my $d = eval {Encode::decode('UTF-8', $s, Encode::FB_DEFAULT())};
+  return defined $d ? $d : $s;
+}
+
+sub clamp_int {
+  my ($v, $def, $min, $max) = @_;
+  return $def unless defined $v && $v =~ /\A-?\d+\z/;
+  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
+}
+
+sub clamp_flt {
+  my ($v, $def, $min, $max) = @_;
+  return $def unless defined $v && $v =~ /\A-?\d+(?:\.\d+)?\z/;
+  return $v < $min ? $min : ($v > $max ? $max : $v + 0);
+}
+
+sub decode_json_hash {
+  my ($s) = @_;
+  return {} unless defined $s && length $s;
+  require JSON::PP;
+  my $r = eval {JSON::PP->new->utf8(0)->decode($s)};
+  return ref($r) eq 'HASH' ? $r : {};
+}
+
+sub split_tags {
+  my ($csv) = @_;
+  return () unless defined $csv && length $csv;
+  return grep {length} split /\s*,\s*/, $csv;
 }
 
 1;

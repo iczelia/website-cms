@@ -19,6 +19,8 @@ use strict;
 use warnings;
 use Encode      ();
 use Time::HiRes qw();
+use Iczelia::Util ();
+use Iczelia::Time ();
 
 # HTTP/1.1, one connection at a time. read_request returns a $req
 # hashref (method, uri, path, query, proto, headers, cookies,
@@ -168,15 +170,7 @@ sub _urldecode {
   return '' unless defined $s;
   $s =~ tr/+/ /;
   $s =~ s/%([0-9a-fA-F]{2})/chr(hex($1))/ge;
-  return _to_utf8($s);
-}
-
-sub _to_utf8 {
-  my ($s) = @_;
-  return $s unless defined $s && length $s;
-  return $s if Encode::is_utf8($s);
-  my $decoded = eval {Encode::decode('UTF-8', $s, Encode::FB_DEFAULT())};
-  return defined $decoded ? $decoded : $s;
+  return Iczelia::Util::to_utf8($s);
 }
 
 sub _parse_querystring {
@@ -269,19 +263,19 @@ sub _parse_multipart {
     my ($name)     = $cd =~ /name="([^"]*)"/;
     my ($filename) = $cd =~ /filename="([^"]*)"/;
     next unless defined $name;
-    $name = _to_utf8($name);
+    $name = Iczelia::Util::to_utf8($name);
     if (defined $filename) {
       push @uploads,
         {
         name         => $name,
-        filename     => _to_utf8($filename),
+        filename     => Iczelia::Util::to_utf8($filename),
         content_type => $h{'content-type'} // 'application/octet-stream',
         body         => $body2,
         size         => length $body2,
         };
     }
     else {
-      $fields{$name} = _to_utf8($body2);
+      $fields{$name} = Iczelia::Util::to_utf8($body2);
     }
   }
   return {fields => \%fields, uploads => \@uploads};
@@ -325,7 +319,7 @@ sub write_response {
   my $hdrs = $resp->{headers} || {};
   $hdrs->{'Content-Length'} = length $body;
   $hdrs->{'Content-Type'} //= 'text/html; charset=utf-8';
-  $hdrs->{'Date'}         //= _http_date();
+  $hdrs->{'Date'}         //= Iczelia::Time::http_date();
   if ($resp->{_keep_alive}) {
     $hdrs->{'Connection'} //= 'keep-alive';
     $hdrs->{'Keep-Alive'} //=
@@ -357,19 +351,6 @@ sub write_response {
 
   print $io $head;
   print $io $body unless ($resp->{method_was} || '') eq 'HEAD';
-}
-
-sub _http_date {
-  return _http_date_of(time);
-}
-
-sub _http_date_of {
-  my $t  = shift;
-  my @t  = gmtime($t);
-  my @wd = qw(Sun Mon Tue Wed Thu Fri Sat);
-  my @mn = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-  return sprintf '%s, %02d %s %d %02d:%02d:%02d GMT',
-    $wd[$t[6]], $t[3], $mn[$t[4]], $t[5] + 1900, $t[2], $t[1], $t[0];
 }
 
 # Defense against header injection via tainted redirect URLs / cookies.

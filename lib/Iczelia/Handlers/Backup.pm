@@ -18,6 +18,7 @@ package Iczelia::Handlers::Backup;
 use strict;
 use warnings;
 use Iczelia::HTTP ();
+use Iczelia::Util qw(escape_url);
 use File::Path    qw(make_path remove_tree);
 use File::Spec    ();
 use File::Copy    qw(move);
@@ -285,7 +286,7 @@ sub _wipe {
   }
   if (@missing) {
     my $why = 'failed: ' . join(',', @missing);
-    return Iczelia::HTTP::redirect('/admin/backup/?msg=' . _urlenc($why));
+    return Iczelia::HTTP::redirect('/admin/backup/?msg=' . escape_url($why));
   }
   my $share = $ctx->{cfg}{'share-dir'}
     or return Iczelia::HTTP::error(500, 'share-dir not configured');
@@ -375,12 +376,6 @@ sub _sha256_file {
   $sha->addfile($fh);
   close $fh;
   return $sha->hexdigest;
-}
-
-sub _urlenc {
-  my ($s) = @_;
-  $s =~ s/([^A-Za-z0-9_.~\-])/sprintf('%%%02X', ord($1))/ge;
-  return $s;
 }
 
 1;

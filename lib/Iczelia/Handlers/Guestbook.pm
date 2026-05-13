@@ -17,9 +17,9 @@
 package Iczelia::Handlers::Guestbook;
 use strict;
 use warnings;
-use JSON::PP            ();
 use Iczelia::HTTP       ();
-use Iczelia::Util       qw(escape_url);
+use Iczelia::Util       qw(escape_url decode_json_hash);
+use Iczelia::Time       qw(ts_fmt);
 use Iczelia::SafeMarkup ();
 use Iczelia::Markup     ();
 use Iczelia::Throttle;
@@ -116,9 +116,8 @@ sub render_public {
 
 sub _cooked {
   my ($ctx, $page) = @_;
-  my $data =
-    eval {JSON::PP->new->utf8(0)->decode($page->{data} // '{}')} || {};
-  my %out = %$data;
+  my $data = decode_json_hash($page->{data});
+  my %out  = %$data;
   if (defined $data->{intro}) {
     my ($html) = Iczelia::Markup::render($data->{intro});
     $out{intro_html} = $html;
@@ -140,20 +139,14 @@ sub _load_entries {
   );
   my @out;
   for my $r (@$rows) {
-    my @t = localtime $r->{posted_at};
     push @out, {
       id        => $r->{id},
       nickname  => $r->{nickname},
-      date_fmt  => sprintf('%04d-%02d-%02d', $t[5] + 1900, $t[4] + 1, $t[3]),
+      date_fmt  => ts_fmt($r->{posted_at}),
       body_html => $r->{body_html} // '',
       reply     => $r->{admin_reply_html}
       ? {
-        date_fmt => $r->{admin_replied_at}
-        ? do {
-          my @rt = localtime $r->{admin_replied_at};
-          sprintf('%04d-%02d-%02d', $rt[5] + 1900, $rt[4] + 1, $rt[3]);
-          }
-        : '',
+        date_fmt  => ts_fmt($r->{admin_replied_at}),
         body_html => $r->{admin_reply_html},
         }
       : undef,

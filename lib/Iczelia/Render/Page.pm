@@ -17,7 +17,7 @@
 package Iczelia::Render;
 use strict;
 use warnings;
-use Iczelia::Util qw(escape_html escape_attr);
+use Iczelia::Util qw(escape_html escape_attr escape_url split_tags decode_json_hash);
 use Iczelia::Time qw(fmt_date fmt_ago atom_iso clock_string);
 
 sub render_home {
@@ -26,7 +26,7 @@ sub render_home {
   # Home re-renders per request: it embeds a live GMT clock.
   my $page = $self->{db}->row(q{SELECT * FROM pages WHERE slug='home'});
   return undef unless $page;
-  my $data = _decode_data($page->{data});
+  my $data = decode_json_hash($page->{data});
 
   my $profile_html = $self->_md($data->{profile} // '', inline => 1);
   my $cur_row      = $self->{db}->row(
@@ -167,7 +167,7 @@ sub render_page {
   my $page = $self->{db}->row('SELECT * FROM pages WHERE slug=?', $slug);
   return undef unless $page;
 
-  my $data    = _decode_data($page->{data});
+  my $data    = decode_json_hash($page->{data});
   my $tplname = "views/$page->{template}.tpl";
 
   my $cooked = $self->_cook_page_data($page->{template}, $data);
@@ -176,7 +176,7 @@ sub render_page {
   if (defined $tag_filter && length $tag_filter) {
 
     # The ?tag= form duplicates the canonical /<slug>/tag/<tag>/ URL.
-    $meta{canonical} = "/$slug/tag/" . _url_seg($tag_filter) . '/';
+    $meta{canonical} = "/$slug/tag/" . escape_url($tag_filter) . '/';
     $meta{robots}    = 'noindex,follow';
   }
   else {
@@ -228,10 +228,6 @@ sub render_page {
       } @order
     ];
   }
-  elsif ($page->{template} eq 'guestbook') {
-    $vars->{entries} = $self->_load_guestbook_entries;
-    $vars->{csrf}    = '';
-  }
   elsif ($page->{template} eq 'list' && $slug eq 'blog') {
     $vars->{posts} = $self->_post_list('blog', tag => $tag_filter);
   }
@@ -256,7 +252,7 @@ sub render_dynamic {
   my $tpl = $row->{template} // '';
   return undef unless $tpl =~ /^[a-z][a-z0-9_-]{0,40}$/;
 
-  my $data = _decode_data($row->{data});
+  my $data = decode_json_hash($row->{data});
   my %cooked;
   for my $k (keys %$data) {
     if ($k eq 'body' || $k eq 'intro') {
@@ -312,7 +308,7 @@ sub render_post {
   }
 
   my $body_html = $self->_md($row->{body});
-  my @tags      = grep {length} split /\s*,\s*/, ($row->{tags} || '');
+  my @tags      = split_tags($row->{tags});
 
   my $vars = $self->base_vars(
     title => "iczelia :: " . $row->{title},
@@ -387,147 +383,111 @@ sub _kind_intro_html {
   my ($self, $slug) = @_;
   my $page = $self->{db}->row('SELECT data FROM pages WHERE slug=?', $slug);
   return '' unless $page;
-  my $data = _decode_data($page->{data});
+  my $data = decode_json_hash($page->{data});
   return $self->_md($data->{intro} // '', inline => 1);
 }
 
-# Index for a kind with no published posts: a real page (current year,
-# empty list) rather than 404. Year archives still 404 when empty.
-sub _render_empty_kind_index {
-  my ($self, $kind, $tpl) = @_;
-  my $year = (gmtime)[5] + 1900;
+# `entries` for journal (full bodies inline), `posts` for blog (link list).
+my %KIND_VIEW = (
+  blog => {
+    list_key   => 'posts',
+    columns    => 'slug, title, date, tags, kappa',
+    desc_empty => 'No blog posts yet.',
+    year_desc  => sub {"Blog posts from $_[0]."},
+  },
+  journal => {
+    list_key   => 'entries',
+    columns    => 'id, slug, title, date, body, tags, kappa',
+    desc_empty => 'No journal entries yet.',
+    year_desc  => sub {"Journal entries from $_[0]."},
+  },
+);
+
+sub _row_to_entry {
+  my ($self, $kind, $r) = @_;
+  my $e = {
+    slug        => $r->{slug},
+    title       => $r->{title},
+    date_fmt    => fmt_date($r->{date}),
+    tags        => [split_tags($r->{tags})],
+    kappa       => $r->{kappa} // '',
+    kappa_title => _kappa_title($r->{kappa}),
+  };
+  if   ($kind eq 'journal') {$e->{body_html} = $self->_md($r->{body})}
+  else                      {$e->{url}       = "/$kind/$r->{slug}/"}
+  return $e;
+}
+
+sub render_kind_index {
+  my ($self, $kind) = @_;
+  my $cfg = $KIND_VIEW{$kind} or return undef;
+  my $nav = $self->_year_nav_data($kind, undef);
+  if (!$nav) {
+    my $year       = (gmtime)[5] + 1900;
+    my $intro_html = $self->_kind_intro_html($kind);
+    my $vars       = $self->base_vars(
+      title       => "iczelia :: $kind",
+      title_short => $kind,
+      slug        => $kind,
+      page        => {"is_$kind" => 1},
+      meta        => {
+        canonical => "/$kind/",
+        description => (length $intro_html ? _meta_desc($intro_html)
+          : $cfg->{desc_empty}),
+      },
+      data            => {intro_html => $intro_html},
+      posts           => [],
+      entries         => [],
+      cur_year        => $year,
+      years           => [{year => $year, current => 1}],
+      prev_year       => undef,
+      next_year       => undef,
+    );
+    return $self->{template}->render("views/$kind.tpl", $vars);
+  }
+  return $self->render_kind_year($kind, $nav->{cur_year}, canonical => "/$kind/");
+}
+
+sub render_kind_year {
+  my ($self, $kind, $year, %opt) = @_;
+  my $cfg = $KIND_VIEW{$kind} or return undef;
+  return undef unless $year && $year =~ /^\d{4}$/;
+  my $nav = $self->_year_nav_data($kind, $year);
+  return undef unless $nav;
+  my $rows = $self->{db}->all(
+    qq{SELECT $cfg->{columns}
+            FROM posts
+           WHERE kind=? AND draft=0
+             AND substr(date,1,4) = ?
+             AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
+        ORDER BY date DESC, created_at DESC, id DESC},
+    $kind, sprintf('%04d', $year)
+  );
+  return undef unless @$rows;
+
+  my @items      = map {$self->_row_to_entry($kind, $_)} @$rows;
   my $intro_html = $self->_kind_intro_html($kind);
-  my $vars = $self->base_vars(
-    title       => "iczelia :: $kind",
+  my $vars       = $self->base_vars(
+    title       => "iczelia :: $kind :: $year",
     title_short => $kind,
     slug        => $kind,
     page        => {"is_$kind" => 1},
     meta        => {
-      canonical  => "/$kind/",
+      canonical => ($opt{canonical} // "/$kind/year/$year/"),
       description => (length $intro_html ? _meta_desc($intro_html)
-        : "No $kind posts yet."),
+        : $cfg->{year_desc}->($year)),
     },
-    data      => {intro_html => $intro_html},
-    posts     => [],
-    entries   => [],
-    cur_year  => $year,
-    years     => [{year => $year, current => 1}],
-    prev_year => undef,
-    next_year => undef,
-  );
-  return $self->{template}->render($tpl, $vars);
-}
-
-sub render_journal_index {
-  my ($self) = @_;
-  my $nav = $self->_year_nav_data('journal', undef);
-  return $self->_render_empty_kind_index('journal', 'views/journal.tpl')
-    unless $nav;
-  return $self->render_journal_year($nav->{cur_year}, canonical => '/journal/');
-}
-
-sub render_journal_year {
-  my ($self, $year, %opt) = @_;
-  return undef unless $year && $year =~ /^\d{4}$/;
-  my $nav = $self->_year_nav_data('journal', $year);
-  return undef unless $nav;
-  my $rows = $self->{db}->all(
-    q{SELECT id, slug, title, date, body, tags, kappa
-            FROM posts
-           WHERE kind='journal' AND draft=0
-             AND substr(date,1,4) = ?
-             AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
-        ORDER BY date DESC, created_at DESC, id DESC},
-    sprintf('%04d', $year)
-  );
-  return undef unless @$rows;
-
-  my @entries;
-  for my $r (@$rows) {
-    my @tags = grep {length} split /\s*,\s*/, ($r->{tags} || '');
-    push @entries,
-      {
-      slug        => $r->{slug},
-      title       => $r->{title},
-      date_fmt    => fmt_date($r->{date}),
-      body_html   => $self->_md($r->{body}),
-      tags        => \@tags,
-      kappa       => $r->{kappa} // '',
-      kappa_title => _kappa_title($r->{kappa}),
-      };
-  }
-  my $intro_html = $self->_kind_intro_html('journal');
-  my $vars       = $self->base_vars(
-    title       => "iczelia :: journal :: $year",
-    title_short => 'journal',
-    slug        => 'journal',
-    page        => {is_journal => 1},
-    meta        => {
-      canonical => ($opt{canonical} // "/journal/year/$year/"),
-      description => (length $intro_html ? _meta_desc($intro_html)
-        : "Journal entries from $year."),
-    },
-    data    => {intro_html => $intro_html},
-    entries => \@entries,
+    data              => {intro_html => $intro_html},
+    $cfg->{list_key}  => \@items,
     %$nav,
   );
-  return $self->{template}->render('views/journal.tpl', $vars);
+  return $self->{template}->render("views/$kind.tpl", $vars);
 }
 
-sub render_blog_index {
-  my ($self) = @_;
-  my $nav = $self->_year_nav_data('blog', undef);
-  return $self->_render_empty_kind_index('blog', 'views/blog.tpl') unless $nav;
-  return $self->render_blog_year($nav->{cur_year}, canonical => '/blog/');
-}
-
-sub render_blog_year {
-  my ($self, $year, %opt) = @_;
-  return undef unless $year && $year =~ /^\d{4}$/;
-  my $nav = $self->_year_nav_data('blog', $year);
-  return undef unless $nav;
-  my $rows = $self->{db}->all(
-    q{SELECT slug, title, date, tags, kappa
-            FROM posts
-           WHERE kind='blog' AND draft=0
-             AND substr(date,1,4) = ?
-             AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
-        ORDER BY date DESC, created_at DESC, id DESC},
-    sprintf('%04d', $year)
-  );
-  return undef unless @$rows;
-
-  my @posts;
-  for my $r (@$rows) {
-    my @tags = grep {length} split /\s*,\s*/, ($r->{tags} || '');
-    push @posts,
-      {
-      slug        => $r->{slug},
-      title       => $r->{title},
-      date_fmt    => fmt_date($r->{date}),
-      url         => "/blog/$r->{slug}/",
-      tags        => \@tags,
-      kappa       => $r->{kappa} // '',
-      kappa_title => _kappa_title($r->{kappa}),
-      };
-  }
-  my $intro_html = $self->_kind_intro_html('blog');
-  my $vars       = $self->base_vars(
-    title       => "iczelia :: blog :: $year",
-    title_short => 'blog',
-    slug        => 'blog',
-    page        => {is_blog => 1},
-    meta        => {
-      canonical => ($opt{canonical} // "/blog/year/$year/"),
-      description => (length $intro_html ? _meta_desc($intro_html)
-        : "Blog posts from $year."),
-    },
-    data  => {intro_html => $intro_html},
-    posts => \@posts,
-    %$nav,
-  );
-  return $self->{template}->render('views/blog.tpl', $vars);
-}
+sub render_blog_index    {$_[0]->render_kind_index('blog')}
+sub render_journal_index {$_[0]->render_kind_index('journal')}
+sub render_blog_year     {my $s = shift; $s->render_kind_year('blog', @_)}
+sub render_journal_year  {my $s = shift; $s->render_kind_year('journal', @_)}
 
 # Themed 404 page for browser navigations.
 sub render_not_found {
@@ -571,7 +531,7 @@ sub render_tag_page {
   return undef unless $kind eq 'blog' || $kind eq 'journal';
   my $page = $self->{db}->row('SELECT * FROM pages WHERE slug=?', $kind);
   return undef unless $page;
-  my $data       = _decode_data($page->{data});
+  my $data       = decode_json_hash($page->{data});
   my $intro_html = $self->_md($data->{intro} // '', inline => 0);
   return $self->{template}->render(
     'views/list.tpl',
@@ -579,7 +539,7 @@ sub render_tag_page {
       title => "iczelia :: $kind / #$tag",
       page  => {('is_' . $kind) => 1},
       meta  => {
-        canonical   => "/$kind/tag/" . _url_seg($tag) . '/',
+        canonical   => "/$kind/tag/" . escape_url($tag) . '/',
         description  => "Posts in $kind tagged '$tag'.",
       },
       data       => {intro_html => $intro_html},
@@ -609,14 +569,14 @@ sub render_tag_feed {
   );
   my @match;
   for my $r (@$rows) {
-    my @tags = split /\s*,\s*/, ($r->{tags} || '');
+    my @tags = split_tags($r->{tags});
     next unless grep {$_ eq $tag} @tags;
     push @match, $r;
     last if @match >= 30;
   }
   return undef unless @match;
-  my $self_url  = "$base/$kind/tag/" . _url_seg($tag) . "/feed.xml";
-  my $alternate = "$base/$kind/tag/" . _url_seg($tag) . "/";
+  my $self_url  = "$base/$kind/tag/" . escape_url($tag) . "/feed.xml";
+  my $alternate = "$base/$kind/tag/" . escape_url($tag) . "/";
   my $latest_ts = 0;
   for my $r (@match) {
     $latest_ts = $r->{updated_at} if $r->{updated_at} > $latest_ts;
@@ -652,12 +612,6 @@ sub render_tag_feed {
   return join '', @bits;
 }
 
-sub _url_seg {
-  my ($s) = @_;
-  $s =~ s/([^A-Za-z0-9_.~\-])/sprintf('%%%02X', ord($1))/ge;
-  return $s;
-}
-
 sub _cached_page {
   my ($self, $slug) = @_;
   my $row =
@@ -686,7 +640,7 @@ sub _post_list {
   my $tag_filter = $opt{tag};
   my @out;
   for my $r (@$rows) {
-    my @tags = grep {length} split /\s*,\s*/, ($r->{tags} || '');
+    my @tags = split_tags($r->{tags});
     if (defined $tag_filter && length $tag_filter) {
       next unless grep {$_ eq $tag_filter} @tags;
     }
@@ -699,38 +653,6 @@ sub _post_list {
       tags     => \@tags,
       url      => "/$kind/$r->{slug}/",
       };
-  }
-  return \@out;
-}
-
-sub _load_guestbook_entries {
-  my ($self) = @_;
-  my $rows = $self->{db}->all(
-    q{SELECT id, posted_at, nickname, body_html, admin_replied_at, admin_reply_html
-          FROM guestbook_entries
-          WHERE approved_at IS NOT NULL AND rejected_at IS NULL
-          ORDER BY posted_at DESC LIMIT 200}
-  );
-  my @out;
-  for my $r (@$rows) {
-    my @t = localtime $r->{posted_at};
-    push @out, {
-      id        => $r->{id},
-      nickname  => $r->{nickname},
-      date_fmt  => sprintf('%04d-%02d-%02d', $t[5] + 1900, $t[4] + 1, $t[3]),
-      body_html => $r->{body_html} // '',
-      reply     => $r->{admin_reply_html}
-      ? {
-        date_fmt => $r->{admin_replied_at}
-        ? do {
-          my @rt = localtime $r->{admin_replied_at};
-          sprintf('%04d-%02d-%02d', $rt[5] + 1900, $rt[4] + 1, $rt[3]);
-          }
-        : '',
-        body_html => $r->{admin_reply_html},
-        }
-      : undef,
-    };
   }
   return \@out;
 }
