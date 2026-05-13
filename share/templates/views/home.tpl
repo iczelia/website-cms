@@ -6,14 +6,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
 {% include "partials/head-meta.tpl" %}
-<link rel="stylesheet" href="/common.compat.css">
+<style>{{{ home_css.common }}}</style>
 <!-- Ranges overlap 1px at each boundary so no viewport matches nothing. -->
-<link rel="stylesheet" href="/style.600.compat.css" media="(max-height: 600px)">
-<link rel="stylesheet" href="/style.600.compat.css" media="(min-width: 600px) and (max-width: 900px)">
-<link rel="stylesheet" href="/style.mobile.compat.css" media="(max-width: 600px) and (min-height: 600px)">
-<link rel="stylesheet" href="/style.800.compat.css" media="(min-width: 900px) and (min-height: 600px) and (max-width: 1200px)">
-<link rel="stylesheet" href="/style.800.compat.css" media="(min-width: 900px) and (min-height: 600px) and (max-height: 800px)">
-<link rel="stylesheet" href="/style.1024.compat.css" media="(min-width: 1200px) and (min-height: 800px)">
+<style media="(max-height: 600px)">{{{ home_css.s600 }}}</style>
+<style media="(min-width: 600px) and (max-width: 900px)">{{{ home_css.s600 }}}</style>
+<style media="(max-width: 600px) and (min-height: 600px)">{{{ home_css.mobile }}}</style>
+<style media="(min-width: 900px) and (min-height: 600px) and (max-width: 1200px)">{{{ home_css.s800 }}}</style>
+<style media="(min-width: 900px) and (min-height: 600px) and (max-height: 800px)">{{{ home_css.s800 }}}</style>
+<style media="(min-width: 1200px) and (min-height: 800px)">{{{ home_css.s1024 }}}</style>
 <link rel="icon" type="image/svg+xml" href="/assets-1024x768/favicon.svg">
 <link rel="alternate icon" href="/favicon.ico">
 <link rel="alternate" type="application/rss+xml"  title="iczelia RSS"  href="/index.xml">

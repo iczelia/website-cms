@@ -22,6 +22,7 @@ use JSON::PP        ();
 use Encode          ();
 use Iczelia::Util   qw(escape_html escape_attr fmt_date fmt_ago);
 use Iczelia::Markup ();
+use Iczelia::Minify ();
 
 use constant SETTINGS_CACHE_TTL => 60;
 
@@ -187,9 +188,36 @@ sub render_home {
     },
     blog_teaser => $teaser_v,
     clock       => _clock_string(),
+    home_css    => $self->_home_css,
   );
 
   return $self->{template}->render('views/home.tpl', $vars);
+}
+
+sub _home_css {
+  my ($self) = @_;
+  return $self->{_home_css} ||= do {
+    my $dir = $self->{cfg} && $self->{cfg}{'chrome-dir'};
+    my %out;
+    if ($dir) {
+      my %map = (
+        common => 'common.compat.css',
+        s600   => 'style.600.compat.css',
+        mobile => 'style.mobile.compat.css',
+        s800   => 'style.800.compat.css',
+        s1024  => 'style.1024.compat.css',
+      );
+      for my $k (keys %map) {
+        my $path = "$dir/$map{$k}";
+        open my $fh, '<:raw', $path or do {$out{$k} = ''; next};
+        local $/;
+        my $css = <$fh>;
+        close $fh;
+        $out{$k} = Iczelia::Minify::css($css);
+      }
+    }
+    \%out;
+  };
 }
 
 sub render_page {
