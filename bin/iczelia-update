@@ -28,7 +28,7 @@ use Iczelia::SelfUpdate;
 my %opt = (
   config        => '/etc/iczelia/iczelia.conf',
   remote        => undef,
-  branch        => undef,
+  'tag-prefix'  => undef,
   'restart-cmd' => undef,
   'dry-run'     => 0,
   quiet         => 0,
@@ -38,7 +38,7 @@ my %opt = (
 GetOptions(
   'config=s'      => \$opt{config},
   'remote=s'      => \$opt{remote},
-  'branch=s'      => \$opt{branch},
+  'tag-prefix=s'  => \$opt{'tag-prefix'},
   'restart-cmd=s' => \$opt{'restart-cmd'},
   'dry-run|n'     => \$opt{'dry-run'},
   'quiet|q'       => \$opt{quiet},
@@ -47,23 +47,23 @@ GetOptions(
 
 if ($opt{help}) {
   print <<'USAGE';
-iczelia-update - fast-forward this checkout to the latest patch release
+iczelia-update - fast-forward this checkout to the next patch tag
 
-Reads lib/Iczelia.pm on the release branch; if it is a forward
-patch-level bump (x.y.Z with Z increased, x.y unchanged) over the
-running version and the working tree is clean, fast-forwards the
-checkout and optionally runs a restart command. Wider changes (a
-minor/major bump, a downgrade, local edits, diverged history) are
-reported and left alone.
+Fetches release tags (`vX.Y.Z` by default) from the remote and picks
+the tag whose version is exactly one patch higher than the running
+version on the same major.minor (current=0.1.0 -> v0.1.1, never -> v0.1.4).
+Anything wider (a minor/major bump, a downgrade, missing intermediate
+patch, local edits, diverged history) is reported and left alone.
+
+A single invocation never bumps by more than 0.0.1; chain cron ticks
+to walk forward across several releases.
 
   --config <path>      config file (default: /etc/iczelia/iczelia.conf)
   --remote <name>      git remote to fetch (default: update-remote from
-                       config, else 'origin'; empty = local branch, no fetch)
-  --branch <name>      branch to track (default: update-branch from config,
-                       else 'release')
+                       config, else 'origin'; empty = no fetch)
+  --tag-prefix <s>     tag prefix to match (default: 'v', so 'v1.2.3')
   --restart-cmd <cmd>  shell command run after a successful update
-                       (default: update-restart-cmd from config; e.g.
-                       'sudo systemctl restart iczelia')
+                       (default: update-restart-cmd from config)
   --dry-run, -n        report what would happen; change nothing
   --quiet, -q          stay silent when already up to date
   --help, -h           this message
@@ -81,10 +81,11 @@ my $remote =
     defined $opt{remote}                  ? $opt{remote}
   : $cfg && defined $cfg->{'update-remote'} ? $cfg->{'update-remote'}
   :                                         'origin';
-my $branch =
-    defined $opt{branch}            ? $opt{branch}
-  : $cfg && $cfg->{'update-branch'} ? $cfg->{'update-branch'}
-  :                                   'release';
+my $tag_prefix =
+    defined $opt{'tag-prefix'}              ? $opt{'tag-prefix'}
+  : $cfg && defined $cfg->{'update-tag-prefix'}
+                                            ? $cfg->{'update-tag-prefix'}
+  :                                           'v';
 my $restart =
     defined $opt{'restart-cmd'} ? $opt{'restart-cmd'}
   : $cfg                        ? $cfg->{'update-restart-cmd'}
@@ -93,7 +94,7 @@ my $restart =
 my $u = Iczelia::SelfUpdate->new(
   repo_dir    => "$FindBin::RealBin/..",
   remote      => $remote,
-  branch      => $branch,
+  tag_prefix  => $tag_prefix,
   restart_cmd => $restart,
 );
 

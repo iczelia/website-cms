@@ -34,8 +34,8 @@ use Iczelia::Util qw(detect_cores);
 #   share-dir         templates / web assets
 #   chrome-dir        static visual chrome (CSS, fonts, asset packs)
 #   cookie-secret     hex-encoded HMAC key (>= 32 bytes of material)
-#   update-remote     git remote bin/iczelia-update fetches ('' = local branch)
-#   update-branch     branch bin/iczelia-update tracks (default: release)
+#   update-remote     git remote bin/iczelia-update fetches ('' = no fetch)
+#   update-tag-prefix tag prefix selecting release tags (default: 'v')
 #   update-restart-cmd  shell command run after a successful self-update
 
 my %DEFAULTS = (
@@ -51,7 +51,7 @@ my %DEFAULTS = (
   'chrome-dir'         => '',
   'cookie-secret'      => '',
   'update-remote'      => 'origin',
-  'update-branch'      => 'release',
+  'update-tag-prefix'  => 'v',
   'update-restart-cmd' => '',
 );
 

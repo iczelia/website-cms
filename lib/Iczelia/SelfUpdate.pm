@@ -20,13 +20,17 @@ use warnings;
 use Iczelia          ();
 use Iczelia::Process ();
 
-# In-place git self-updater. Fetches the configured branch (default
-# `release` on `origin`), reads its Iczelia $VERSION, and -- only when
-# the difference is a forward patch-level bump on the same major.minor
-# (x.y.Z with Z increased and x, y unchanged) and the working tree is
-# clean -- fast-forwards the checkout to it. Anything wider (a
-# minor/major bump, a downgrade, a dirty tree, diverged history) is
-# reported and left for a human.
+# In-place git self-updater driven by signed-style release tags.
+#
+# Each tag is `<prefix>X.Y.Z` (default prefix `v`). The updater fetches
+# tags from the remote, finds the tag whose version is *exactly one
+# patch higher* than the running version on the same major.minor, and
+# fast-forwards the checkout to that tag. A single invocation never
+# bumps by more than 0.0.1; if the maintainer skipped a patch number
+# the updater stays put until that patch is released. Minor/major
+# bumps are always reported and left for a human.
+#
+# Branches play no role in target selection.
 #
 # git is shelled out to so we don't grow a dependency; a custom `git`
 # path can be injected for tests. Cron-driven via bin/iczelia-update.
@@ -36,7 +40,7 @@ sub new {
   my $self = {
     repo_dir    => $arg{repo_dir} || _repo_root(),
     remote      => defined $arg{remote} ? $arg{remote} : 'origin',
-    branch      => $arg{branch}  || 'release',
+    tag_prefix  => defined $arg{tag_prefix} ? $arg{tag_prefix} : 'v',
     git         => $arg{git}     || 'git',
     timeout     => $arg{timeout} || 30,
     current     => defined $arg{current} ? $arg{current} : $Iczelia::VERSION,
@@ -50,16 +54,6 @@ sub _repo_root {
   require File::Spec;
   no warnings 'once';
   return File::Spec->rel2abs("$FindBin::RealBin/..");
-}
-
-# The ref we compare against. With a remote configured it's the
-# remote-tracking branch (after a fetch); otherwise a plain local
-# branch and no fetch is done.
-sub _target_ref {
-  my ($self) = @_;
-  return length $self->{remote}
-    ? "$self->{remote}/$self->{branch}"
-    : $self->{branch};
 }
 
 # Run `git -C <repo> @args`; returns stdout on success (possibly the
@@ -90,17 +84,32 @@ sub _cmp_version {
     || $a->[2] <=> $b->[2];
 }
 
-# Inspect remote vs. current without touching the working tree.
+# Parse `git tag --list '<prefix>*'` output into a list of
+# {tag => name, ver => [x,y,z]} hashrefs.
+sub _parse_tags {
+  my ($self, $raw) = @_;
+  my $prefix_re = quotemeta $self->{tag_prefix};
+  my @out;
+  for my $line (split /\n/, $raw) {
+    $line =~ s/^\s+|\s+$//g;
+    next unless length $line;
+    next unless $line =~ /\A$prefix_re([0-9]+)\.([0-9]+)\.([0-9]+)\z/;
+    push @out,
+      {tag => $line, ver => [$1 + 0, $2 + 0, $3 + 0]};
+  }
+  return \@out;
+}
+
+# Inspect remote tags vs. current without touching the working tree.
 # Returns a hashref:
 #   action         => 'update' | 'noop' | 'skip' | 'error'
 #   reason         => human-readable line
 #   current        => running version
-#   remote_ref     => ref examined
-#   remote_version => version found there (when readable)
+#   remote_version => version selected (when an eligible tag exists)
+#   target_tag     => tag name selected (when 'update')
 sub check {
   my ($self) = @_;
-  my $ref = $self->_target_ref;
-  my %out = (current => $self->{current}, remote_ref => $ref);
+  my %out = (current => $self->{current});
 
   my $cur = _parse_version($self->{current});
   return {%out, action => 'error',
@@ -111,39 +120,64 @@ sub check {
     reason => "$self->{repo_dir} is not a git checkout"}
     unless defined $self->_git('rev-parse', '--git-dir');
 
+  # Pull tag refs from the remote. `--tags --force` so an upstream
+  # tag re-pointing (e.g. a corrected release tag) overwrites the
+  # local ref instead of silently keeping the old commit.
   if (length $self->{remote}) {
     return {%out, action => 'error',
-      reason => "git fetch $self->{remote} $self->{branch} failed"}
+      reason => "git fetch $self->{remote} --tags failed"}
       unless defined
-      $self->_git('fetch', '--quiet', $self->{remote}, $self->{branch});
+      $self->_git('fetch', '--quiet', '--tags', '--force', $self->{remote});
   }
 
-  my $blob = $self->_git('show', "$ref:lib/Iczelia.pm");
-  return {%out, action => 'error',
-    reason => "cannot read lib/Iczelia.pm at $ref (no such branch?)"}
-    unless defined $blob;
+  my $raw = $self->_git('tag', '--list', "$self->{tag_prefix}*");
+  return {%out, action => 'error', reason => 'git tag --list failed'}
+    unless defined $raw;
 
-  my ($rv) = $blob =~ /\$VERSION\s*=\s*['"]([^'"]+)['"]/;
-  $out{remote_version} = $rv if defined $rv;
-  my $rem = _parse_version($rv);
-  return {%out, action => 'error',
-    reason => "unparseable version at $ref: "
-      . (defined $rv ? "'$rv'" : '(none found)')}
-    unless $rem;
+  my $tags = $self->_parse_tags($raw);
+  unless (@$tags) {
+    return {%out, action => 'noop',
+      reason => "no release tags matching $self->{tag_prefix}X.Y.Z"};
+  }
 
-  my $delta = _cmp_version($rem, $cur);
-  return {%out, action => 'noop', reason => "already at $rv"}
-    if $delta == 0;
-  return {%out, action => 'skip',
-    reason => "$ref is $rv, older than $self->{current}; refusing to downgrade"}
-    if $delta < 0;
-  return {%out, action => 'skip',
-    reason => "$self->{current} -> $rv is not a patch-level bump; update manually"}
-    if $rem->[0] != $cur->[0] || $rem->[1] != $cur->[1];
+  # The next eligible step is exactly +0.0.1 from current.
+  my $step_ver = [$cur->[0], $cur->[1], $cur->[2] + 1];
+  my ($target) =
+    grep {_cmp_version($_->{ver}, $step_ver) == 0} @$tags;
 
-  # major.minor unchanged, patch increased: eligible. Refuse if the
-  # working tree has tracked modifications -- a fast-forward would
-  # fail or clobber them.
+  unless ($target) {
+
+    # Distinguish "you're past the latest patch on this minor" from
+    # "next available tag is a minor/major bump" from "patches were
+    # skipped past +1, we won't leap".
+    my @newer = grep {_cmp_version($_->{ver}, $cur) > 0} @$tags;
+    unless (@newer) {
+      return {%out, action => 'noop',
+        reason => "already at latest $self->{tag_prefix}"
+          . join('.', @$cur)};
+    }
+    my @same_mm = grep {
+           $_->{ver}[0] == $cur->[0]
+        && $_->{ver}[1] == $cur->[1]
+    } @newer;
+    if (@same_mm) {
+      my $next_avail = (sort {_cmp_version($a->{ver}, $b->{ver})} @same_mm)[0];
+      return {%out, action => 'skip',
+        reason => "$self->{tag_prefix}"
+          . join('.', @$step_ver)
+          . " not released; nearest higher patch is "
+          . $next_avail->{tag}
+          . " (update by 0.0.1 only)"};
+    }
+    return {%out, action => 'skip',
+      reason => "next release is a minor/major bump; update manually"};
+  }
+
+  $out{remote_version} = join '.', @{$target->{ver}};
+  $out{target_tag}     = $target->{tag};
+
+  # Eligible step found; refuse if the working tree has tracked
+  # modifications. A fast-forward would either fail or clobber them.
   my $dirty = $self->_git('status', '--porcelain', '--untracked-files=no');
   return {%out, action => 'error', reason => 'git status failed'}
     unless defined $dirty;
@@ -152,15 +186,16 @@ sub check {
     if length $dirty;
 
   return {%out, action => 'update',
-    reason => "patch update $self->{current} -> $rv"};
+    reason => "patch step $self->{current} -> $out{remote_version}"};
 }
 
-# Fast-forward the checkout to the target ref. Returns ($ok, $message).
+# Fast-forward the checkout to the chosen tag. Returns ($ok, $message).
 sub _fast_forward {
-  my ($self) = @_;
-  my $ref = $self->_target_ref;
-  return (1, undef) if defined $self->_git('merge', '--ff-only', $ref);
-  return (0, "fast-forward to $ref failed (diverged history?)");
+  my ($self, $target_tag) = @_;
+  return (1, undef)
+    if defined $self->_git('merge', '--ff-only', $target_tag);
+  return (0,
+    "fast-forward to $target_tag failed (diverged history?)");
 }
 
 # check(), then -- unless dry_run -- fast-forward and run the restart
@@ -178,7 +213,7 @@ sub run {
     return $r;
   }
 
-  my ($ok, $msg) = $self->_fast_forward;
+  my ($ok, $msg) = $self->_fast_forward($r->{target_tag});
   return {%$r, action => 'error', reason => $msg} unless $ok;
   $r->{action} = 'updated';
 
