@@ -764,7 +764,6 @@ sub base_vars {
     canonical      => '',
     og_type        => 'website',
     og_title       => '',
-    image          => $s{site}{og_image} // '',
     published_time => '',
     modified_time  => '',
     robots         => '',
@@ -773,6 +772,22 @@ sub base_vars {
     my $o = delete $extra{meta};
     %meta = (%meta, %$o);
   }
+
+  # og:image: an explicit per-page override wins; else the first content
+  # image in the body (skipping LaTeX PNGs); else the site-wide card
+  # setting; else the logo. Resolved to an absolute URL below. Posts pass
+  # their body under `post`, pages/dynamic pages under `data`.
+  unless (length($meta{image} // '')) {
+    my $post = ref $extra{post} eq 'HASH' ? $extra{post} : {};
+    my $data = ref $extra{data} eq 'HASH' ? $extra{data} : {};
+    $meta{image} =
+         _first_content_img($post->{body_html})
+      || _first_content_img($data->{body_html})
+      || _first_content_img($data->{intro_html})
+      || $s{site}{og_image}
+      || '/assets-1024x768/iczelia-128.png';
+  }
+
   for my $k (qw(canonical image)) {
     next unless defined $meta{$k} && $meta{$k} =~ m{^/};
     $meta{$k} = "$base_url$meta{$k}" if length $base_url;
@@ -834,6 +849,10 @@ sub _meta_desc {
   $t =~ s/&quot;/"/g;
   $t =~ s/&#0*39;|&apos;/'/g;
   $t =~ s/\s+/ /g;
+  # Tags were replaced by a space, so inline ones (<em>, <a>, <code>)
+  # leave a gap before the next character. Tidy up around punctuation.
+  $t =~ s/ +([.,;:!?)\]}\xbb\x{2026}"'])/$1/g;
+  $t =~ s/([(\[{\xab]) +/$1/g;
   $t =~ s/^\s+//;
   $t =~ s/\s+$//;
   if (length $t > $n) {
@@ -842,6 +861,23 @@ sub _meta_desc {
     $t .= '...';
   }
   return $t;
+}
+
+# First content <img> src in some rendered HTML, for og:image. Skips
+# rendered-LaTeX <img class="...math..."> so a formula PNG never wins.
+sub _first_content_img {
+  my ($html) = @_;
+  return '' unless defined $html && length $html;
+  while ($html =~ /<img\b([^>]*)>/gi) {
+    my $attrs = $1;
+    next if $attrs =~ /\bclass\s*=\s*["'][^"']*\bmath\b/i;
+    if ($attrs =~ /\bsrc\s*=\s*["']([^"']+)["']/i) {
+      my $src = $1;
+      $src =~ s/&amp;/&/g;
+      return $src;
+    }
+  }
+  return '';
 }
 
 # Decoy spans (.no-spam / .fake, aria-hidden) feed naive scrapers

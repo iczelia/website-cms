@@ -10,6 +10,7 @@
 <meta property="og:site_name" content="{{ site.title }}">
 <meta property="og:locale" content="{{ meta.og_locale }}">
 {% if meta.og_url %}<meta property="og:url" content="{{ meta.og_url }}">{% endif %}
-{% if meta.image %}<meta property="og:image" content="{{ meta.image }}">{% endif %}
+{% if meta.image %}<meta property="og:image" content="{{ meta.image }}">
+<meta name="twitter:image" content="{{ meta.image }}">{% endif %}
 {% if meta.published_time %}<meta property="article:published_time" content="{{ meta.published_time }}">{% endif %}
 {% if meta.modified_time %}<meta property="article:modified_time" content="{{ meta.modified_time }}">{% endif %}
