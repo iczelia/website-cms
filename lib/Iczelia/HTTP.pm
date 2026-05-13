@@ -168,7 +168,15 @@ sub _urldecode {
   return '' unless defined $s;
   $s =~ tr/+/ /;
   $s =~ s/%([0-9a-fA-F]{2})/chr(hex($1))/ge;
-  return $s;
+  return _to_utf8($s);
+}
+
+sub _to_utf8 {
+  my ($s) = @_;
+  return $s unless defined $s && length $s;
+  return $s if Encode::is_utf8($s);
+  my $decoded = eval {Encode::decode('UTF-8', $s, Encode::FB_DEFAULT())};
+  return defined $decoded ? $decoded : $s;
 }
 
 sub _parse_querystring {
@@ -261,18 +269,19 @@ sub _parse_multipart {
     my ($name)     = $cd =~ /name="([^"]*)"/;
     my ($filename) = $cd =~ /filename="([^"]*)"/;
     next unless defined $name;
+    $name = _to_utf8($name);
     if (defined $filename) {
       push @uploads,
         {
         name         => $name,
-        filename     => $filename,
+        filename     => _to_utf8($filename),
         content_type => $h{'content-type'} // 'application/octet-stream',
         body         => $body2,
         size         => length $body2,
         };
     }
     else {
-      $fields{$name} = $body2;
+      $fields{$name} = _to_utf8($body2);
     }
   }
   return {fields => \%fields, uploads => \@uploads};

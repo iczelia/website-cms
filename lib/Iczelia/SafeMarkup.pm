@@ -17,6 +17,7 @@
 package Iczelia::SafeMarkup;
 use strict;
 use warnings;
+use Encode        ();
 use Iczelia::Util qw(escape_html);
 use Iczelia::Util ();
 use Iczelia::MarkupCommon
@@ -59,6 +60,8 @@ sub render {
   $depth ||= 0;
   return ('', []) unless defined $src && length $src;
   return (Iczelia::Util::escape_html($src), []) if $depth > MAX_NEST;
+
+  $src = _utf8($src) if $depth == 0;
 
   # Hard cap (caller should already enforce this; double-check).
   if (length($src) > 8192) {
@@ -143,6 +146,14 @@ sub render {
     return ($html, \@math);
   }
   return ($html, []);
+}
+
+sub _utf8 {
+  my ($s) = @_;
+  return '' unless defined $s;
+  return $s if Encode::is_utf8($s);
+  my $decoded = eval {Encode::decode('UTF-8', $s, Encode::FB_DEFAULT())};
+  return defined $decoded ? $decoded : $s;
 }
 
 sub _inline {
