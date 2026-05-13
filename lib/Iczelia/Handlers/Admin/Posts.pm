@@ -27,10 +27,7 @@ use constant TAGS_MAX      => 200;
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my ($fn, @extra) = @_;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0], @extra)}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   for my $kind (qw(blog journal)) {
     $router->get("/admin/$kind/",           $gate->(\&_post_list,         $kind));
     $router->get("/admin/$kind/new",        $gate->(\&_post_new,          $kind));

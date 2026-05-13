@@ -22,10 +22,7 @@ use Iczelia::Highlight ();
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/highlight/',           $gate->(\&_lang_list));
   $router->get('/admin/highlight/new',        $gate->(\&_lang_new));
   $router->post('/admin/highlight/new',       $gate->(\&_lang_create));

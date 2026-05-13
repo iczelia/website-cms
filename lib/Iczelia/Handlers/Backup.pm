@@ -38,10 +38,7 @@ my $JSON = JSON::PP->new->utf8(1)->canonical(1)->pretty(1);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/backup/', $gate->(\&_form));
   $router->post('/admin/backup/export', $gate->(\&_export));
   $router->post('/admin/backup/import', $gate->(\&_import));

@@ -22,10 +22,7 @@ use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/dynamic/',            $gate->(\&_dynamic_list));
   $router->get('/admin/dynamic/new',         $gate->(\&_dynamic_new));
   $router->post('/admin/dynamic/new',        $gate->(\&_dynamic_create));

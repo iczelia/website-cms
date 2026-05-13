@@ -24,10 +24,7 @@ use Iczelia::Handlers::Admin::Forms qw(
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/webring/',  $gate->(\&_webring_form));
   $router->post('/admin/webring/', $gate->(\&_webring_save));
 }

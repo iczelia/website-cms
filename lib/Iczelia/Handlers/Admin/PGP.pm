@@ -24,10 +24,7 @@ use constant PGP_BODY_MAX => 256 * 1024;
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/pgp/',         $gate->(\&_pgp_form));
   $router->post('/admin/pgp/',        $gate->(\&_pgp_upload));
   $router->post('/admin/pgp/delete',  $gate->(\&_pgp_delete));

@@ -34,10 +34,7 @@ my $JSON = JSON::PP->new->utf8(0);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/media/',             $gate->(\&_media_list));
   $router->post('/admin/media/upload',      $gate->(\&_media_upload));
   $router->post('/admin/media/:id/delete',  $gate->(\&_media_delete));

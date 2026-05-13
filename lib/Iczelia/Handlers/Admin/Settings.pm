@@ -25,10 +25,7 @@ use Iczelia::Handlers::Admin::Forms qw(simple_form_render);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/settings/',                $gate->(\&_settings_form));
   $router->post('/admin/settings/',               $gate->(\&_settings_save));
   $router->get('/admin/settings/theme-preview',   $gate->(\&_theme_preview));

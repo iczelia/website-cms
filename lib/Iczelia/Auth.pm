@@ -187,6 +187,14 @@ sub gate {
   return $fn->($ctx, $req, @rest);
 }
 
+sub route_gate {
+  my ($self, $ctx) = @_;
+  return sub {
+    my ($fn, @extra) = @_;
+    sub {$self->gate($fn, $ctx, $_[0], @extra)};
+  };
+}
+
 # Returns undef on success or a 400 response on CSRF mismatch.
 sub require_csrf {
   my ($self, $req, $form_name) = @_;

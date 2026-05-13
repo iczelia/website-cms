@@ -22,10 +22,7 @@ use Iczelia::Handlers::Admin::Forms qw(field_for_form);
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->get('/admin/edit/:slug',  $gate->(\&_edit_page));
   $router->post('/admin/edit/:slug', $gate->(\&_save_page));
 }

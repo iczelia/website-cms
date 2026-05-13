@@ -27,10 +27,7 @@ use constant REBUILD_KEYS =>
 
 sub register {
   my ($class, $router, $ctx) = @_;
-  my $gate = sub {
-    my $fn = shift;
-    sub {$ctx->{auth}->gate($fn, $ctx, $_[0])}
-  };
+  my $gate = $ctx->{auth}->route_gate($ctx);
   $router->post('/admin/cache/drop',           $gate->(\&_cache_drop));
   $router->post('/admin/cache/rebuild',        $gate->(\&_cache_rebuild));
   $router->post('/admin/cache/rebuild/cancel', $gate->(\&_cache_rebuild_cancel));
