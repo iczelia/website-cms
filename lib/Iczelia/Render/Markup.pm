@@ -63,14 +63,7 @@ sub _meta_desc {
        // $html;
 
   $t =~ s{<[^>]+>}{ }g;
-  $t =~ s/&nbsp;/ /g;
-  $t =~ s/&amp;/&/g;
-  $t =~ s/&lt;/</g;
-  $t =~ s/&gt;/>/g;
-  $t =~ s/&quot;/"/g;
-  $t =~ s/&#0*39;|&apos;/'/g;
-  $t =~ s/&#x?[0-9A-Fa-f]+;/ /g;
-  $t =~ s/&[A-Za-z][A-Za-z0-9]*;/ /g;
+  $t = Iczelia::Util::decode_html_entities($t);
   $t =~ s/\s+/ /g;
   $t =~ s/ +([.,;:!?)\]}\xbb\x{2026}"'])/$1/g;
   $t =~ s/([(\[{\xab]) +/$1/g;

@@ -95,20 +95,16 @@ sub _activity_view {
       rows   => $by_src{$s} || [],
       };
   }
-  my $html = $ctx->{template}->render(
-    'views/admin_activity.tpl',
-    Iczelia::Handlers::Admin::admin_vars(
-      $ctx, $req,
-      title      => 'activity',
-      sections   => \@sections,
-      currently  => $currently,
-      csrf_extra => {
-        currently => $ctx->{auth}->csrf_token($sid, 'activity:currently'),
-        refresh   => $ctx->{auth}->csrf_token($sid, 'activity:refresh'),
-      },
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_activity.tpl',
+    title      => 'activity',
+    sections   => \@sections,
+    currently  => $currently,
+    csrf_extra => {
+      currently => $ctx->{auth}->csrf_token($sid, 'activity:currently'),
+      refresh   => $ctx->{auth}->csrf_token($sid, 'activity:refresh'),
+    },
   );
-  return Iczelia::HTTP::html($html);
 }
 
 sub _activity_currently {

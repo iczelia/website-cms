@@ -49,9 +49,9 @@ sub register {
 sub _form {
   my ($ctx, $req) = @_;
   require Iczelia::Handlers::Admin;
-  my $sid  = $req->{auth_sid};
-  my $vars = Iczelia::Handlers::Admin::admin_vars(
-    $ctx, $req,
+  my $sid = $req->{auth_sid};
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_backup.tpl',
     title => 'backup / wipe',
     csrf  => {
       export => $ctx->{auth}->csrf_token($sid, 'backup:export'),
@@ -59,14 +59,9 @@ sub _form {
       wipe   => $ctx->{auth}->csrf_token($sid, 'backup:wipe'),
     },
     flash => $req->{qparams}{msg}
-    ? {
-      kind => 'ok',
-      text => $req->{qparams}{msg}
-      }
+    ? {kind => 'ok', text => $req->{qparams}{msg}}
     : undef,
   );
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render('views/admin_backup.tpl', $vars));
 }
 
 sub _export {
@@ -158,7 +153,14 @@ use constant MAX_EXTRACTED => 512 * 1024 * 1024;
 # .. entries, and bails when the entry-size sum exceeds MAX_EXTRACTED.
 sub _archive_paths_safe {
   my ($tar_path) = @_;
-  open my $lst, '-|', 'tar', '-tvf', $tar_path or return 0;
+
+  # --quoting-style=escape forces tar to backslash-escape any embedded
+  # whitespace / control characters in filenames, so the split below
+  # can rely on whitespace separating fields. Without it, a filename
+  # like `evil ../../etc/passwd` shifts $f[5] and slips past the
+  # `(^|/)\.\.(/|$)` check.
+  open my $lst, '-|', 'tar', '--quoting-style=escape', '-tvf', $tar_path
+    or return 0;
   my $ok    = 1;
   my $total = 0;
   while (my $line = <$lst>) {
@@ -170,6 +172,14 @@ sub _archive_paths_safe {
     my ($size, $entry) = ($f[2], $f[5]);
     $entry =~ s/ -> .*$//;
     if ($entry =~ m{^/} || $entry =~ m{(?:^|/)\.\.(?:/|$)}) {
+      $ok = 0;
+      last;
+    }
+
+    # An escape sequence in the entry means the source filename held
+    # whitespace or control chars; refuse such backup archives outright
+    # rather than try to decode them safely.
+    if ($entry =~ /\\[^\\]/) {
       $ok = 0;
       last;
     }
@@ -268,6 +278,32 @@ sub _import {
 
 sub _wipe {
   my ($ctx, $req) = @_;
+  if (my $reject = _wipe_validate_request($ctx, $req)) {
+    return $reject;
+  }
+  my $share = $ctx->{cfg}{'share-dir'}
+    or return Iczelia::HTTP::error(500, 'share-dir not configured');
+  my $auth_dump = $ctx->{db}->all('SELECT * FROM auth');
+
+  # PRAGMA must be set outside any transaction; tx_immediate wraps the
+  # wipe sequence. Operator must quiesce traffic first (admin UI says
+  # so); sibling workers will hit table-not-found.
+  $ctx->{db}->dbh->do('PRAGMA foreign_keys = OFF');
+  my $err = _wipe_apply_schema($ctx, $share, $auth_dump);
+  $ctx->{db}->dbh->do('PRAGMA foreign_keys = ON');
+  if (defined $err) {
+    warn "wipe failed: $err";
+    return Iczelia::HTTP::error(500, "wipe failed: $err");
+  }
+  eval {$ctx->{render}->invalidate_all};
+  _wipe_audit($ctx, $req);
+  return Iczelia::HTTP::redirect('/admin/backup/?msg=wiped');
+}
+
+# CSRF, three checkboxes, the literal phrase, and the admin password.
+# Returns a redirect / error response on failure, undef on success.
+sub _wipe_validate_request {
+  my ($ctx, $req) = @_;
   my $err = $ctx->{auth}->require_csrf($req, 'backup:wipe');
   return $err if $err;
   my $p = $req->{params};
@@ -275,28 +311,24 @@ sub _wipe {
   push @missing, 'confirm1' unless $p->{confirm1};
   push @missing, 'confirm2' unless $p->{confirm2};
   push @missing, 'confirm3' unless $p->{confirm3};
-  push @missing, 'phrase'
-    unless ($p->{phrase} // '') eq 'WIPE THIS SITE';
-  my $pw       = $p->{password} // '';
+  push @missing, 'phrase'   unless ($p->{phrase} // '') eq 'WIPE THIS SITE';
   my $auth_row = $ctx->{db}
     ->row('SELECT pwhash FROM auth WHERE username=?', $req->{auth_user});
-
-  if (!$auth_row || !$ctx->{auth}->verify_password($pw, $auth_row->{pwhash})) {
+  if (!$auth_row
+    || !$ctx->{auth}->verify_password($p->{password} // '', $auth_row->{pwhash}))
+  {
     push @missing, 'password';
   }
-  if (@missing) {
-    my $why = 'failed: ' . join(',', @missing);
-    return Iczelia::HTTP::redirect('/admin/backup/?msg=' . escape_url($why));
-  }
-  my $share = $ctx->{cfg}{'share-dir'}
-    or return Iczelia::HTTP::error(500, 'share-dir not configured');
-  my $auth_dump = $ctx->{db}->all('SELECT * FROM auth');
+  return undef unless @missing;
+  my $why = 'failed: ' . join(',', @missing);
+  return Iczelia::HTTP::redirect('/admin/backup/?msg=' . escape_url($why));
+}
 
-  # PRAGMA must be set outside any transaction; the wipe sequence
-  # itself wraps in tx_immediate. Operator must quiesce traffic
-  # first (admin UI says so); sibling workers will hit table-not-found.
-  $ctx->{db}->dbh->do('PRAGMA foreign_keys = OFF');
-  eval {
+# Drop every non-system table, reapply schema + seed, rehydrate auth.
+# Returns undef on success or an error string.
+sub _wipe_apply_schema {
+  my ($ctx, $share, $auth_dump) = @_;
+  my $ok = eval {
     $ctx->{db}->tx_immediate(
       sub {
         my $d      = shift;
@@ -314,36 +346,30 @@ sub _wipe {
         $d->apply_schema_file("$share/seed.sql") if -f "$share/seed.sql";
         for my $a (@$auth_dump) {
           $d->do_(
-            q{
-                    INSERT INTO auth(username, pwhash) VALUES(?, ?)
-                    ON CONFLICT(username) DO UPDATE SET pwhash=excluded.pwhash},
+            q{INSERT INTO auth(username, pwhash) VALUES(?, ?)
+                ON CONFLICT(username) DO UPDATE SET pwhash=excluded.pwhash},
             $a->{username}, $a->{pwhash}
           );
         }
       }
     );
     1;
-  } or do {
-    my $err = $@;
-    eval {$ctx->{db}->dbh->do('PRAGMA foreign_keys = ON')};
-    warn "wipe failed: $err";
-    return Iczelia::HTTP::error(500, "wipe failed: $err");
   };
-  $ctx->{db}->dbh->do('PRAGMA foreign_keys = ON');
-  eval {$ctx->{render}->invalidate_all};
+  return $ok ? undef : ($@ || 'unknown error');
+}
 
-  # Audit row.
+# Audit trail row. Best-effort; failure is swallowed.
+sub _wipe_audit {
+  my ($ctx, $req) = @_;
   eval {
     $ctx->{db}->do_(
-      q{
-            INSERT INTO analytics_events(ts, path, status, method,
-                visitor_hash, referer_host, ua_class)
-            VALUES(strftime('%s','now'), '/admin/wipe/', 200, 'POST',
-                   ?, NULL, 'browser')},
+      q{INSERT INTO analytics_events(ts, path, status, method,
+            visitor_hash, referer_host, ua_class)
+        VALUES(strftime('%s','now'), '/admin/wipe/', 200, 'POST',
+               ?, NULL, 'browser')},
       substr(sha256_hex($req->{auth_user} . '|wipe'), 0, 16)
     );
   };
-  return Iczelia::HTTP::redirect('/admin/backup/?msg=wiped');
 }
 
 sub _date_stamp {

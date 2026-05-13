@@ -55,12 +55,10 @@ sub _media_list {
     $r->{size_kb}  = sprintf('%.0f', ($r->{size} || 0) / 1024);
     $r->{csrf_del} = $ctx->{auth}->csrf_token($sid, "media:del:$r->{id}");
   }
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_media.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req, title => 'media', items => $rows)
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_media.tpl',
+    title => 'media',
+    items => $rows,
   );
 }
 

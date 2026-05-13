@@ -47,21 +47,17 @@ sub _edit_page {
     push @fields, field_for_form($f, $data->{$f->{name}});
   }
 
-  my $html = $ctx->{template}->render(
-    'views/admin_edit_page.tpl',
-    Iczelia::Handlers::Admin::admin_vars(
-      $ctx, $req,
-      title     => "edit $slug",
-      csrf_form => $csrf,
-      page      => {
-        slug        => $slug,
-        template    => $page->{template},
-        updated_fmt => ts_fmt($page->{updated_at}),
-      },
-      fields => \@fields,
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_edit_page.tpl',
+    title     => "edit $slug",
+    csrf_form => $csrf,
+    page      => {
+      slug        => $slug,
+      template    => $page->{template},
+      updated_fmt => ts_fmt($page->{updated_at}),
+    },
+    fields => \@fields,
   );
-  return Iczelia::HTTP::html($html);
 }
 
 sub _save_page {

@@ -50,16 +50,11 @@ sub register {
 sub _post_list {
   my ($ctx, $req, $kind) = @_;
   my $posts = $ctx->{content}->list_posts($kind);
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_post_list.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title => "$kind posts",
-        kind  => $kind,
-        posts => $posts,
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_post_list.tpl',
+    title => "$kind posts",
+    kind  => $kind,
+    posts => $posts,
   );
 }
 
@@ -93,23 +88,7 @@ sub _render_post_form {
         };
     }
   }
-  my $rec =
-    $post
-    ? {
-    id             => $post->{id},
-    slug           => $post->{slug},
-    title          => $post->{title},
-    date           => $post->{date},
-    tags           => $post->{tags},
-    body           => $post->{body},
-    draft          => $post->{draft},
-    publish_at     => $post->{publish_at},
-    publish_at_fmt => ts_to_local_input($post->{publish_at}),
-    word_count     => $post->{word_count} // 0,
-    updated_fmt    => ts_fmt($post->{updated_at}),
-    aliases        => $aliases,
-    }
-    : {
+  my $rec = {
     id             => 0,
     slug           => '',
     title          => '',
@@ -120,21 +99,25 @@ sub _render_post_form {
     publish_at     => undef,
     publish_at_fmt => '',
     word_count     => 0,
-    aliases        => [],
-    };
+    aliases        => $aliases,
+  };
+  if ($post) {
+    %$rec = (
+      %$rec, %$post,
+      publish_at_fmt => ts_to_local_input($post->{publish_at}),
+      updated_fmt    => ts_fmt($post->{updated_at}),
+      word_count     => $post->{word_count} // 0,
+      aliases        => $aliases,
+    );
+  }
 
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_edit_post.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title       => $post ? "edit $kind/$post->{slug}" : "new $kind",
-        kind        => $kind,
-        post        => $rec,
-        form_action => $action,
-        csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_edit_post.tpl',
+    title       => $post ? "edit $kind/$post->{slug}" : "new $kind",
+    kind        => $kind,
+    post        => $rec,
+    form_action => $action,
+    csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
   );
 }
 
@@ -224,18 +207,13 @@ sub _revisions_list {
     $r->{csrf_restore} = $ctx->{auth}
       ->csrf_token($sid, "rev-restore:$kind:$slug:$r->{revision_num}");
   }
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_post_revisions.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title     => "$kind/$slug revisions",
-        kind      => $kind,
-        slug      => $slug,
-        post      => $post,
-        revisions => $rows,
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_post_revisions.tpl',
+    title     => "$kind/$slug revisions",
+    kind      => $kind,
+    slug      => $slug,
+    post      => $post,
+    revisions => $rows,
   );
 }
 
@@ -249,20 +227,14 @@ sub _revisions_view {
   return Iczelia::HTTP::error(404) unless $row;
   my $sid = $req->{auth_sid};
   $row->{created_fmt} = ts_fmt($row->{created_at});
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_post_revision_view.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title        => "$kind/$slug rev $rev",
-        kind         => $kind,
-        slug         => $slug,
-        post         => $post,
-        rev          => $row,
-        csrf_restore =>
-          $ctx->{auth}->csrf_token($sid, "rev-restore:$kind:$slug:$rev"),
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_post_revision_view.tpl',
+    title        => "$kind/$slug rev $rev",
+    kind         => $kind,
+    slug         => $slug,
+    post         => $post,
+    rev          => $row,
+    csrf_restore => $ctx->{auth}->csrf_token($sid, "rev-restore:$kind:$slug:$rev"),
   );
 }
 

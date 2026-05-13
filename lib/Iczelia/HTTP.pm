@@ -361,6 +361,13 @@ sub _strip_crlf {
   $s;
 }
 
+sub is_https {
+  my ($req) = @_;
+  return 0 unless $req && ref($req) eq 'HASH';
+  my $proto = $req->{headers}{'x-forwarded-proto'} // '';
+  return $proto =~ /^https$/i ? 1 : 0;
+}
+
 sub make_cookie {
   my (%c)   = @_;
   my $name  = _strip_crlf($c{name});

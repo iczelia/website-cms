@@ -247,52 +247,41 @@ sub run_rebuild {
   $db->disconnect;
 
   if ($total) {
-    require POSIX;
-    my $n = Iczelia::Util::detect_cores();
-    $n = $total if $n > $total;
-    $n ||= 1;
-    my @pids;
-    for my $w (0 .. $n - 1) {
-      my $pid = fork();
-      next unless defined $pid;
-      if ($pid == 0) {
-        $SIG{TERM} = sub {POSIX::_exit(0)};
-        $SIG{INT}  = sub {POSIX::_exit(0)};
-        my $cdb = Iczelia::DB->connect($cfg);
-        my $tpl = Iczelia::Template->new(
-          dirs => [$cfg->{'share-dir'} . '/templates']);
-        my $ctex = Iczelia::Tex->new(
-          db      => $cdb,
-          tmp_dir => $cfg->{'tmp-dir'}
-        );
-        my $ccache = Iczelia::Cache->new(
-          db      => $cdb,
-          tmp_dir => $cfg->{'tmp-dir'}
-        );
-        my $crnd = Iczelia::Render->new(
-          db       => $cdb,
-          template => $tpl,
-          tex      => $ctex,
-          cache    => $ccache,
-          cfg      => $cfg,
-        );
-        for (my $i = $w; $i < $total; $i += $n) {
-          my $t = $tasks[$i];
-          eval {
-            if    ($t->[0] eq 'page') {$crnd->render_page($t->[1])}
-            elsif ($t->[0] eq 'post') {$crnd->render_post($t->[1], $t->[2])}
-          };
-          $cdb->do_(
-            'UPDATE settings SET value = CAST(value AS INTEGER) + 1
-                 WHERE key = ?', REBUILD_DONE
+    my $hdl = {};   # per-child cache, populated lazily on first task
+    Iczelia::Util::fork_pool(
+      tasks  => \@tasks,
+      worker => sub {
+        my ($t) = @_;
+        unless ($hdl->{db}) {
+          $hdl->{db}  = Iczelia::DB->connect($cfg);
+          $hdl->{tpl} = Iczelia::Template->new(
+            dirs => [$cfg->{'share-dir'} . '/templates']);
+          $hdl->{tex} = Iczelia::Tex->new(
+            db      => $hdl->{db},
+            tmp_dir => $cfg->{'tmp-dir'}
+          );
+          $hdl->{cache} = Iczelia::Cache->new(
+            db      => $hdl->{db},
+            tmp_dir => $cfg->{'tmp-dir'}
+          );
+          $hdl->{rnd} = Iczelia::Render->new(
+            db       => $hdl->{db},
+            template => $hdl->{tpl},
+            tex      => $hdl->{tex},
+            cache    => $hdl->{cache},
+            cfg      => $cfg,
           );
         }
-        $cdb->disconnect;
-        POSIX::_exit(0);
-      }
-      push @pids, $pid;
-    }
-    waitpid($_, 0) for @pids;
+        eval {
+          if    ($t->[0] eq 'page') {$hdl->{rnd}->render_page($t->[1])}
+          elsif ($t->[0] eq 'post') {$hdl->{rnd}->render_post($t->[1], $t->[2])}
+        };
+        $hdl->{db}->do_(
+          'UPDATE settings SET value = CAST(value AS INTEGER) + 1
+               WHERE key = ?', REBUILD_DONE
+        );
+      },
+    );
   }
 
   $db = Iczelia::DB->connect($cfg);

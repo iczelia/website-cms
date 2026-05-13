@@ -18,10 +18,13 @@ package Iczelia::Handlers::Feeds;
 use strict;
 use warnings;
 use utf8;
-use Iczelia::HTTP ();
-use Iczelia::Util qw(escape_html);
-use Iczelia::Time qw(fmt_iso http_date_of);
+use Iczelia::HTTP   ();
+use Iczelia::Util   qw(escape_html);
+use Iczelia::Time   qw(fmt_iso http_date_of);
+use Iczelia::Markup ();
 use Iczelia::Handlers::Honeypot ();
+
+use constant FEED_ITEMS_LIMIT => 30;
 
 # Feeds: Atom (/feed.xml), RSS 2.0 (/index.xml, /rss.xml), sitemap, and
 # a minimal robots.txt. Bodies render through Markup but math placeholders
@@ -63,7 +66,7 @@ sub _feed {
         FROM posts
         WHERE kind='blog' AND draft=0
           AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
-        ORDER BY date DESC, created_at DESC, id DESC LIMIT 30}
+        ORDER BY date DESC, created_at DESC, id DESC LIMIT } . FEED_ITEMS_LIMIT
   );
 
   my $latest_ts = 0;
@@ -98,7 +101,6 @@ sub _feed {
     # feed. Re-run just the body through Markup, no Tex.
     my $content;
     if (defined $r->{rendered_html} && length $r->{rendered_html}) {
-      require Iczelia::Markup;
       my ($html) = Iczelia::Markup::render($r->{body} // '');
       $html =~ s/__MATH(\d+)__/[math]/g;
       $content = $html;
@@ -166,7 +168,7 @@ sub _rss {
         FROM posts
         WHERE kind='blog' AND draft=0
           AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
-        ORDER BY date DESC, created_at DESC, id DESC LIMIT 30}
+        ORDER BY date DESC, created_at DESC, id DESC LIMIT } . FEED_ITEMS_LIMIT
   );
 
   my $latest_ts = 0;
@@ -198,7 +200,6 @@ sub _rss {
       . '</managingEditor>';
   }
 
-  require Iczelia::Markup;
   for my $r (@$rows) {
     my $url = "$base/blog/$r->{slug}/";
     my ($body_html) = Iczelia::Markup::render($r->{body} // '');

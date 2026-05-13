@@ -31,7 +31,8 @@ use Iczelia::Handlers::Admin::Cache qw(REBUILD_PHASE);
 
 # Snapshot key updated at the start of each pass and again after
 # rendering finishes; the admin dashboard reads it instead of walking.
-use constant STATS_SETTING => 'math.cache_stats';
+use constant STATS_SETTING      => 'math.cache_stats';
+use constant COMPRESS_PASS_BATCH => 50;
 
 # Background tex_cache filler: walk every math source, fork N workers,
 # render the misses, also drive the response_cache compress pass.
@@ -114,27 +115,20 @@ sub _pass {
     $self->_log(sprintf "%d fragment(s) to warm; %d worker(s)",
       scalar(@missing), $n_workers);
 
-    my @pids;
-    for my $w (0 .. $n_workers - 1) {
-      my $pid = fork();
-      croak "fork: $!" unless defined $pid;
-      if ($pid == 0) {
-        $SIG{TERM} = sub {exit 0};
-        $SIG{INT}  = sub {exit 0};
-        my ($cdb, $ctex) = $self->_connect;
-        for (my $i = $w; $i < @missing; $i += $n_workers) {
-          eval {$ctex->render(@{$missing[$i]})};
-          $cdb->do_(
-            'UPDATE settings SET value = CAST(value AS INTEGER) + 1
-                 WHERE key = ?', $prog_key
-          ) if $prog_key;
-        }
-        $cdb->disconnect;
-        exit 0;
-      }
-      push @pids, $pid;
-    }
-    waitpid($_, 0) for @pids;
+    my $hdl = {};   # per-child cache; populated lazily on first task
+    Iczelia::Util::fork_pool(
+      tasks   => \@missing,
+      workers => $n_workers,
+      worker  => sub {
+        my ($frag) = @_;
+        ($hdl->{db}, $hdl->{tex}) = $self->_connect unless $hdl->{db};
+        eval {$hdl->{tex}->render(@$frag)};
+        $hdl->{db}->do_(
+          'UPDATE settings SET value = CAST(value AS INTEGER) + 1
+               WHERE key = ?', $prog_key
+        ) if $prog_key;
+      },
+    );
 
     my $elapsed = Time::HiRes::time() - $started;
     $self->_log(sprintf "warmed %d fragment(s) in %.1fs",
@@ -152,7 +146,7 @@ sub _pass {
       tmp_dir => $self->{cfg}{'tmp-dir'},
     );
     my $started = Time::HiRes::time();
-    my $n       = $cache->compress_pending(limit => 50);
+    my $n       = $cache->compress_pending(limit => COMPRESS_PASS_BATCH);
     if ($n) {
       $self->_log(sprintf "compressed %d response cache row(s) in %.1fs",
         $n, Time::HiRes::time() - $started);

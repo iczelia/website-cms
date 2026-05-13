@@ -39,7 +39,7 @@ my %FUNCS = (
   upper     => sub {defined $_[0]        ? uc $_[0]           : ''},
   lower     => sub {defined $_[0]        ? lc $_[0]           : ''},
   raw       => sub {defined $_[0]        ? $_[0]              : ''},
-  esc_attr  => sub {Iczelia::Util::escape_attr($_[0])},
+  esc_attr  => sub {Iczelia::Util::escape_html($_[0])},
   urlencode => sub {Iczelia::Util::escape_url($_[0])},
 );
 

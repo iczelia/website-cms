@@ -17,8 +17,10 @@
 package Iczelia::Render;
 use strict;
 use warnings;
-use Iczelia::Util qw(escape_html escape_attr escape_url split_tags decode_json_hash);
+use Iczelia::Util qw(escape_html escape_url split_tags decode_json_hash);
 use Iczelia::Time qw(fmt_date fmt_ago atom_iso clock_string);
+
+use constant TAG_FEED_SCAN_LIMIT => 60;
 
 # Iczelia::Render fragment. Full package layout in Render.pm.
 # Provides: render_home, render_page, render_post, render_dynamic,
@@ -35,42 +37,79 @@ sub render_home {
   my ($self) = @_;
 
   # Home re-renders per request: it embeds a live GMT clock.
-  my $page = $self->{db}->row(q{SELECT * FROM pages WHERE slug='home'});
+  my ($page, $profile_html, $currently) = $self->_home_load_page_data;
   return undef unless $page;
-  my $data = decode_json_hash($page->{data});
+  my $by_src = $self->_home_load_activity;
+  $self->_home_collapse_github($by_src);
+  my $github_compact = @{$by_src->{github}} ? [$by_src->{github}[0]] : [];
 
+  my $vars = $self->base_vars(
+    title => $page->{title},
+    page  => {is_home => 1},
+    meta  => {canonical => '/'},
+    data  => {
+      profile_html => $profile_html,
+      currently    => $currently,
+    },
+    updates  => $self->_home_load_updates,
+    activity => {
+      github         => $by_src->{github},
+      mastodon       => $by_src->{mastodon},
+      bluesky        => $by_src->{bluesky},
+      github_compact => $github_compact,
+    },
+    blog_teaser => $self->_home_load_blog_teaser,
+    clock       => clock_string(),
+    home_css    => $self->_home_css,
+  );
+  return $self->{template}->render('views/home.tpl', $vars);
+}
+
+sub _home_load_page_data {
+  my ($self) = @_;
+  my $page = $self->{db}->row(q{SELECT * FROM pages WHERE slug='home'});
+  return (undef, '', '') unless $page;
+  my $data         = decode_json_hash($page->{data});
   my $profile_html = $self->_md($data->{profile} // '', inline => 1);
   my $cur_row      = $self->{db}->row(
     q{SELECT text FROM activity WHERE source='currently'
                  ORDER BY position LIMIT 1}
   );
-  my $currently = ($cur_row && defined $cur_row->{text}) ? $cur_row->{text} : '';
+  my $currently =
+    ($cur_row && defined $cur_row->{text}) ? $cur_row->{text} : '';
+  return ($page, $profile_html, $currently);
+}
 
-  # Three latest updates. mid/extra flags drive the chrome's responsive
-  # separators (middle >= 800px, third >= 1024px).
+# Three latest updates. mid/extra flags drive the chrome's responsive
+# separators (middle >= 800px, third >= 1024px).
+sub _home_load_updates {
+  my ($self) = @_;
   my $rows = $self->{db}->all(
     q{SELECT date, body FROM updates ORDER BY position DESC, id DESC LIMIT 3});
   my @updates;
   for my $i (0 .. $#$rows) {
-    my $r         = $rows->[$i];
-    my $body_html = $self->_md($r->{body}, inline => 1);
-    my $is_mid    = $i == 1      ? 1 : 0;
-    my $is_extra  = $i == 2      ? 1 : 0;
-    my $sep_after = $i < $#$rows ? 1 : 0;
+    my $r        = $rows->[$i];
+    my $is_mid   = $i == 1 ? 1 : 0;
+    my $is_extra = $i == 2 ? 1 : 0;
     push @updates,
       {
       date_fmt  => fmt_date($r->{date}),
-      body_html => $body_html,
+      body_html => $self->_md($r->{body}, inline => 1),
       mid       => $is_mid,
       extra     => $is_extra,
-      sep_after => $sep_after,
-      sep_mid   => ($is_mid   ? 1 : 0),
-      sep_extra => ($is_extra ? 1 : 0),
+      sep_after => $i < $#$rows ? 1 : 0,
+      sep_mid   => $is_mid,
+      sep_extra => $is_extra,
       };
   }
+  return \@updates;
+}
 
-  # Grouped by source; position 0 = most recent.
-  my $act = $self->{db}->all(
+# Activity rows grouped by source; position 0 = most recent. Mastodon /
+# Bluesky get trimmed to the latest entry only and annotated with ago.
+sub _home_load_activity {
+  my ($self) = @_;
+  my $act    = $self->{db}->all(
     q{SELECT source, text, url, posted_at FROM activity
           ORDER BY source, position}
   );
@@ -84,11 +123,23 @@ sub render_home {
       };
   }
   for my $k (qw(github mastodon bluesky)) {$by_src{$k} ||= []}
+  for my $k (qw(mastodon bluesky)) {
+    my $first = @{$by_src{$k}} ? [$by_src{$k}[0]] : [];
+    $by_src{$k} = $first;
+    for my $a (@$first) {
+      $a->{ago} = $a->{posted_at} ? fmt_ago($a->{posted_at}) : '';
+    }
+  }
+  return \%by_src;
+}
 
-  # GitHub: collapse repeats with an "(xN)" suffix, cap at 3 entries.
+# GitHub: collapse repeats with an "(xN)" suffix, cap at 3 entries.
+# Mutates $by_src->{github} in place.
+sub _home_collapse_github {
+  my ($self, $by_src) = @_;
   my @gh;
   my %gh_idx;
-  for my $a (@{$by_src{github}}) {
+  for my $a (@{$by_src->{github}}) {
     if (defined $gh_idx{$a->{text}}) {
       $gh[$gh_idx{$a->{text}}]{count}++;
     }
@@ -114,55 +165,23 @@ sub render_home {
     }
     $g->{suffix} = $g->{count} > 1 ? " (\x{00d7}$g->{count})" : '';
   }
-  $by_src{github} = \@gh;
+  $by_src->{github} = \@gh;
+}
 
-  # Mastodon / Bluesky: keep only the most recent entry per platform.
-  for my $k (qw(mastodon bluesky)) {
-    my $first = (@{$by_src{$k}}) ? [$by_src{$k}[0]] : [];
-    $by_src{$k} = $first;
-    for my $a (@$first) {
-      $a->{ago} = $a->{posted_at} ? fmt_ago($a->{posted_at}) : '';
-    }
-  }
-
-  my $github_compact = @{$by_src{github}} ? [$by_src{github}[0]] : [];
-
-  my $teaser = $self->{db}->row(
+sub _home_load_blog_teaser {
+  my ($self) = @_;
+  my $row = $self->{db}->row(
     q{SELECT slug, title, date FROM posts
           WHERE kind='blog' AND draft=0
             AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
           ORDER BY date DESC, created_at DESC, id DESC LIMIT 1}
   );
-  my $teaser_v;
-  if ($teaser) {
-    $teaser_v = {
-      title    => $teaser->{title},
-      date_fmt => fmt_date($teaser->{date}),
-      url      => "/blog/$teaser->{slug}/",
-    };
-  }
-
-  my $vars = $self->base_vars(
-    title => $page->{title},
-    page  => {is_home => 1},
-    meta  => {canonical => '/'},
-    data  => {
-      profile_html => $profile_html,
-      currently    => $currently,
-    },
-    updates  => \@updates,
-    activity => {
-      github         => $by_src{github},
-      mastodon       => $by_src{mastodon},
-      bluesky        => $by_src{bluesky},
-      github_compact => $github_compact,
-    },
-    blog_teaser => $teaser_v,
-    clock       => clock_string(),
-    home_css    => $self->_home_css,
-  );
-
-  return $self->{template}->render('views/home.tpl', $vars);
+  return undef unless $row;
+  return {
+    title    => $row->{title},
+    date_fmt => fmt_date($row->{date}),
+    url      => "/blog/$row->{slug}/",
+  };
 }
 
 sub render_page {
@@ -575,7 +594,7 @@ sub render_tag_feed {
             FROM posts
            WHERE kind=? AND draft=0
              AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
-        ORDER BY date DESC, created_at DESC, id DESC LIMIT 60},
+        ORDER BY date DESC, created_at DESC, id DESC LIMIT } . TAG_FEED_SCAN_LIMIT,
     $kind
   );
   my @match;
@@ -599,10 +618,10 @@ sub render_tag_feed {
   my $title = "iczelia :: $kind / #$tag";
   my $tt    = escape_html($title);
   push @bits, qq{  <title>$tt</title>\n};
-  push @bits, qq{  <link href="} . escape_attr($alternate) . qq{" />\n};
+  push @bits, qq{  <link href="} . escape_html($alternate) . qq{" />\n};
   push @bits,
-    qq{  <link rel="self" href="} . escape_attr($self_url) . qq{" />\n};
-  push @bits, qq{  <id>} . escape_attr($self_url) . qq{</id>\n};
+    qq{  <link rel="self" href="} . escape_html($self_url) . qq{" />\n};
+  push @bits, qq{  <id>} . escape_html($self_url) . qq{</id>\n};
   push @bits, qq{  <updated>} . atom_iso($latest_ts) . qq{</updated>\n};
 
   for my $r (@match) {
@@ -613,8 +632,8 @@ sub render_tag_feed {
     my $body_esc  = escape_html($body_html);
     push @bits, qq{  <entry>\n};
     push @bits, qq{    <title>$te</title>\n};
-    push @bits, qq{    <link href="} . escape_attr($url) . qq{" />\n};
-    push @bits, qq{    <id>} . escape_attr($url) . qq{</id>\n};
+    push @bits, qq{    <link href="} . escape_html($url) . qq{" />\n};
+    push @bits, qq{    <id>} . escape_html($url) . qq{</id>\n};
     push @bits, qq{    <updated>$upd</updated>\n};
     push @bits, qq{    <content type="html">$body_esc</content>\n};
     push @bits, qq{  </entry>\n};

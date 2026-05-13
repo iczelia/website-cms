@@ -279,74 +279,114 @@ sub _worker_loop {
 
 sub _handle_one {
   my ($self, $cli, %opt) = @_;
-  my $cap     = $self->{cfg}{'request-cap'};
-  my $timeout = $opt{timeout};
 
-  my $req = Iczelia::HTTP::read_request(
-    $cli,
-    cap     => $cap,
-    timeout => $timeout,
-    state   => $opt{state},
-  );
-  return 'close' unless $req;
-  if (ref $req eq 'HASH' && $req->{_bad}) {
-    my $r = Iczelia::HTTP::error($req->{_status} || 400, $req->{_why});
-    Iczelia::HTTP::write_response($cli, $r);
-    return 'close';
-  }
-  my $t_handle_start = Time::HiRes::time();
+  my $req = _read_or_400($cli, $self->{cfg}{'request-cap'}, \%opt);
+  return 'close' unless ref $req eq 'HASH' && !$req->{_bad};
 
-  my $peer = _peer_addr($cli);
-  $req->{remote} = $peer;
-
-  # X-Real-IP wins over X-Forwarded-For because the latter is
-  # client-appendable. Only honoured from a trusted upstream.
-  if ($TRUSTED_HOPS{$peer}) {
-    my $real = $req->{headers}{'x-real-ip'};
-    if (defined $real) {$real =~ s/^\s+//; $real =~ s/\s+$//}
-    if (defined $real && length $real) {
-      $req->{remote} = $real;
-    }
-    else {
-      my $xff = $req->{headers}{'x-forwarded-for'};
-      if (defined $xff && length $xff) {
-        my @hops = grep {length} map {
-          my $h = $_;
-          $h =~ s/^\s+//;
-          $h =~ s/\s+$//;
-          $h
-        } split /,/, $xff;
-        $req->{remote} = $hops[-1] if @hops;
-      }
-    }
-  }
+  my $t_start = Time::HiRes::time();
+  _apply_trusted_xff($req, _peer_addr($cli));
 
   my $cache_key = _cache_key_for($self, $req);
-  if ($cache_key) {
-    my $hit = eval {$self->{cache}->get($cache_key, $req)};
-    if (!$@ && $hit) {
-      my $ka = _decide_keep_alive($req, \%opt);
-      if ($ka) {
-        $hit->{_keep_alive}         = 1;
-        $hit->{_keep_alive_timeout} = $opt{ka_timeout};
-        $hit->{_keep_alive_max}     = $opt{ka_max};
-      }
-      _compress_uncached($req, $hit);   # for rows the warmer hasn't reached
-      Iczelia::HTTP::write_response($cli, $hit);
-      _log_request(
-        $req, $hit,
-        {
-          total   => Time::HiRes::time() - $t_handle_start,
-          handler => 0,
-          cache   => Time::HiRes::time() - $t_handle_start,
-          hit     => 1,
-        }
-      );
-      return $ka ? 'keep' : 'close';
-    }
+  if (my $verdict = _serve_from_cache($self, $cli, $req, $cache_key, $t_start, \%opt)) {
+    return $verdict;
   }
 
   my $t_handler_start = Time::HiRes::time();
+  my $resp = _dispatch($self, $req);
+  my $t_handler_end = Time::HiRes::time();
+
+  $resp = _apply_404_theme($self, $req, $resp);
+  my $minified;
+  ($resp, $minified) = _store_and_minify($self, $cache_key, $resp);
+  _minify_html_if_uncached($resp) unless $minified;
+  _compress_uncached($req, $resp);
+
+  my $keep_alive = _decide_keep_alive($req, \%opt);
+  _apply_keep_alive($resp, $keep_alive, \%opt);
+
+  Iczelia::HTTP::write_response($cli, $resp);
+  my $t_done = Time::HiRes::time();
+  _log_request(
+    $req, $resp,
+    {
+      handler => $t_handler_end - $t_handler_start,
+      cache   => $t_done - $t_handler_end,
+      total   => $t_done - $t_start,
+      hit     => 0,
+    }
+  );
+  _log_analytics($self, $req, $resp);
+  return $keep_alive ? 'keep' : 'close';
+}
+
+# Read one request; on malformed input, write the 400 and return undef
+# so the caller drops the connection.
+sub _read_or_400 {
+  my ($cli, $cap, $opt) = @_;
+  my $req = Iczelia::HTTP::read_request(
+    $cli,
+    cap     => $cap,
+    timeout => $opt->{timeout},
+    state   => $opt->{state},
+  );
+  return undef unless $req;
+  if (ref $req eq 'HASH' && $req->{_bad}) {
+    my $r = Iczelia::HTTP::error($req->{_status} || 400, $req->{_why});
+    Iczelia::HTTP::write_response($cli, $r);
+    return undef;
+  }
+  return $req;
+}
+
+# X-Real-IP wins over X-Forwarded-For because the latter is
+# client-appendable. Only honoured from a trusted upstream.
+sub _apply_trusted_xff {
+  my ($req, $peer) = @_;
+  $req->{remote} = $peer;
+  return unless $TRUSTED_HOPS{$peer};
+  my $real = $req->{headers}{'x-real-ip'};
+  if (defined $real) {$real =~ s/^\s+//; $real =~ s/\s+$//}
+  if (defined $real && length $real) {
+    $req->{remote} = $real;
+    return;
+  }
+  my $xff = $req->{headers}{'x-forwarded-for'};
+  return unless defined $xff && length $xff;
+  my @hops = grep {length} map {
+    my $h = $_;
+    $h =~ s/^\s+//;
+    $h =~ s/\s+$//;
+    $h
+  } split /,/, $xff;
+  $req->{remote} = $hops[-1] if @hops;
+}
+
+# If the cache holds a response for this key, write it and return the
+# keep/close verdict. Returns undef on miss so the caller dispatches.
+sub _serve_from_cache {
+  my ($self, $cli, $req, $cache_key, $t_start, $opt) = @_;
+  return undef unless $cache_key;
+  my $hit = eval {$self->{cache}->get($cache_key, $req)};
+  return undef if $@ || !$hit;
+  my $ka = _decide_keep_alive($req, $opt);
+  _apply_keep_alive($hit, $ka, $opt);
+  _compress_uncached($req, $hit);    # for rows the warmer hasn't reached
+  Iczelia::HTTP::write_response($cli, $hit);
+  _log_request(
+    $req, $hit,
+    {
+      total   => Time::HiRes::time() - $t_start,
+      handler => 0,
+      cache   => Time::HiRes::time() - $t_start,
+      hit     => 1,
+    }
+  );
+  return $ka ? 'keep' : 'close';
+}
+
+# Route the request to on_request / router / dynamic_lookup / 404.
+sub _dispatch {
+  my ($self, $req) = @_;
   my $resp;
   eval {
     if ($self->{on_request}) {
@@ -380,89 +420,71 @@ sub _handle_one {
     warn "handler error: $req->{method} $req->{path}: $err";
     $resp = Iczelia::HTTP::error(500);
   };
+  return $resp || Iczelia::HTTP::error(500, 'no response');
+}
 
-  $resp ||= Iczelia::HTTP::error(500, 'no response');
-  my $t_handler_end = Time::HiRes::time();
+# Themify plain-text 404s; HTML 404s came from a handler that already
+# built its own body.
+sub _apply_404_theme {
+  my ($self, $req, $resp) = @_;
+  return $resp unless ($resp->{status} // 0) == 404 && $self->{not_found_handler};
+  my $ct = ($resp->{headers} && $resp->{headers}{'Content-Type'}) // '';
+  return $resp unless $ct =~ m{^text/plain}i || $ct eq '';
+  my $themed = eval {$self->{not_found_handler}->($req)};
+  return $resp if $@ || !$themed;
+  $themed->{status} = 404;
+  return $themed;
+}
 
-  # Themify plain-text 404s; HTML 404s came from a handler that
-  # already built its own body.
-  if (($resp->{status} // 0) == 404 && $self->{not_found_handler}) {
-    my $ct = ($resp->{headers} && $resp->{headers}{'Content-Type'}) // '';
-    if ($ct =~ m{^text/plain}i || $ct eq '') {
-      my $themed = eval {$self->{not_found_handler}->($req)};
-      if (!$@ && $themed) {
-        $themed->{status} = 404;
-        $resp = $themed;
-      }
-    }
-  }
-
-  # put() returns the canonical (ETag-stamped) response so the first
-  # visitor sees what subsequent cache hits will see.
-  my $minified = 0;
-  if ( $cache_key
+# Cache put() returns the canonical (ETag-stamped) response so the
+# first visitor sees what subsequent cache hits will see. Returns
+# ($resp, $minified_flag); $minified is set when the cache layer ran
+# its own minify pass.
+sub _store_and_minify {
+  my ($self, $cache_key, $resp) = @_;
+  return ($resp, 0)
+    unless $cache_key
     && ($resp->{status} || 200) == 200
     && !$resp->{_no_cache}
-    && (!$resp->{cookies} || !@{$resp->{cookies}}))
-  {
-    eval {
-      my $stored = $self->{cache}->put($cache_key, $resp);
-      if ($stored) {$resp = $stored; $minified = 1}
-      1;
-    } or do {
-      warn "cache put failed: $@";
-    };
-  }
+    && (!$resp->{cookies} || !@{$resp->{cookies}});
+  my $stored;
+  eval {$stored = $self->{cache}->put($cache_key, $resp); 1}
+    or warn "cache put failed: $@";
+  return $stored ? ($stored, 1) : ($resp, 0);
+}
 
-  # uncached pages skip put()'s minify pass; do it here
-  if ( !$minified
-    && ($resp->{status} || 200) == 200
-    && $resp->{headers}
-    && ($resp->{headers}{'Content-Type'} // '') =~ m{^text/html\b}i
-    && defined $resp->{body}
-    && length $resp->{body})
-  {
-    $resp->{body} = Iczelia::Minify::html($resp->{body});
-  }
+# Uncached HTML responses skip put()'s minify pass; minify here.
+sub _minify_html_if_uncached {
+  my ($resp) = @_;
+  return unless ($resp->{status} || 200) == 200;
+  return unless $resp->{headers};
+  return unless ($resp->{headers}{'Content-Type'} // '') =~ m{^text/html\b}i;
+  return unless defined $resp->{body} && length $resp->{body};
+  $resp->{body} = Iczelia::Minify::html($resp->{body});
+}
 
-  _compress_uncached($req, $resp);
+# Stamp the keep-alive flags on the response (no-op when $ka is false).
+sub _apply_keep_alive {
+  my ($resp, $ka, $opt) = @_;
+  return unless $ka;
+  $resp->{_keep_alive}         = 1;
+  $resp->{_keep_alive_timeout} = $opt->{ka_timeout};
+  $resp->{_keep_alive_max}     = $opt->{ka_max};
+}
 
-  my $keep_alive = _decide_keep_alive($req, \%opt);
-  if ($keep_alive) {
-    $resp->{_keep_alive}         = 1;
-    $resp->{_keep_alive_timeout} = $opt{ka_timeout};
-    $resp->{_keep_alive_max}     = $opt{ka_max};
-  }
-
-  Iczelia::HTTP::write_response($cli, $resp);
-  my $t_done = Time::HiRes::time();
-
-  _log_request(
-    $req, $resp,
-    {
-      handler => $t_handler_end - $t_handler_start,
-      cache   => $t_done - $t_handler_end,
-      total   => $t_done - $t_handle_start,
-      hit     => 0,
-    }
-  );
-
-  # Analytics runs post-write so failures can't reach the client.
-  if ($self->{analytics_db}) {
-    eval {
-      require Iczelia::Analytics;
-      Iczelia::Analytics::log_request($self->{analytics_db}, $req, $resp);
-      1;
-    } or warn "analytics: $@";
-  }
-
-  return $keep_alive ? 'keep' : 'close';
+# Analytics runs post-write so failures can't reach the client.
+sub _log_analytics {
+  my ($self, $req, $resp) = @_;
+  return unless $self->{analytics_db};
+  eval {
+    require Iczelia::Analytics;
+    Iczelia::Analytics::log_request($self->{analytics_db}, $req, $resp);
+    1;
+  } or warn "analytics: $@";
 }
 
 # On-the-wire compression for responses the cache hasn't pre-encoded;
 # fast brotli quality since this is per request, not the warmer.
-my $COMPRESS_CT_RE =
-  qr{^(?:text/|application/(?:json|javascript|xml|[\w.+-]+\+xml)\b)}i;
 my $COMPRESS_MIN = 256;
 
 sub _compress_uncached {
@@ -472,7 +494,7 @@ sub _compress_uncached {
   return if exists $h->{'Content-Encoding'};
   my $body = $resp->{body};
   return unless defined $body && length $body;
-  return unless ($h->{'Content-Type'} // '') =~ $COMPRESS_CT_RE;
+  return unless Iczelia::Compress::is_compressible_ct($h->{'Content-Type'} // '');
 
   require Encode;
   $body = Encode::encode('UTF-8', $body) if Encode::is_utf8($body);

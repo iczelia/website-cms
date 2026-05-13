@@ -18,10 +18,8 @@ package Iczelia::Handlers::Admin::Settings;
 use strict;
 use warnings;
 use Iczelia::HTTP                   ();
-use Iczelia::Util                   qw(escape_attr);
 use Iczelia::Markup                 ();
 use Iczelia::Highlight              ();
-use Iczelia::Handlers::Admin::Forms qw(simple_form_render);
 
 sub register {
   my ($class, $router, $ctx) = @_;
@@ -85,30 +83,28 @@ sub _settings_form {
   my $kv  = $ctx->{content}->all_settings;
   my $sid = $req->{auth_sid};
 
-  my @bits;
+  my @groups;
   for my $g (@SETTINGS_GROUPS) {
     my ($id, $label, $keys) = @$g;
-    push @bits,
-      qq{<fieldset class="cms-settings-group cms-settings-group-$id"><legend>$label</legend><table class="cms-settings"><tbody>};
+    my @fields;
     for my $k (@$keys) {
-      my $v = escape_attr($kv->{$k} // '');
       (my $display = $k) =~ s/^\Q$id\E\.//;
-      push @bits,
-        qq{<tr><td><label for="s_$k">$display</label></td><td><input id="s_$k" type="text" name="$k" value="$v"></td></tr>};
+      push @fields,
+        {
+        key     => $k,
+        display => $display,
+        value   => $kv->{$k} // '',
+        };
     }
-    push @bits, qq{</tbody></table></fieldset>};
+    push @groups, {id => $id, label => $label, fields => \@fields};
   }
-  push @bits,
-    qq{<p class="cms-help"><a href="/admin/settings/theme-preview" target="_blank" rel="noopener">preview the current code theme &raquo;</a></p>};
 
-  return Iczelia::HTTP::html(
-    simple_form_render(
-      $ctx, $req,
-      title  => 'settings',
-      action => '/admin/settings/',
-      csrf   => $ctx->{auth}->csrf_token($sid, 'settings'),
-      body   => join('', @bits),
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_settings.tpl',
+    title       => 'settings',
+    form_action => '/admin/settings/',
+    form_csrf   => $ctx->{auth}->csrf_token($sid, 'settings'),
+    groups      => \@groups,
   );
 }
 
@@ -127,70 +123,52 @@ sub _settings_save {
 
 # Exercises every hl-* class plus realistic snippets, so theme.code.*
 # tweaks have one canonical preview surface.
-sub _theme_preview {
-  my ($ctx, $req) = @_;
-  my @cls =
-    qw(com str chr num kw typ cst pre op pn id attr lt mac reg lbl gly sys);
-  my @samples = (
-    [
-      'c', q{int main(void) {
+my @THEME_PREVIEW_CLASSES =
+  qw(com str chr num kw typ cst pre op pn id attr lt mac reg lbl gly sys);
+my @THEME_PREVIEW_SAMPLES = (
+  [
+    'c', q{int main(void) {
     /* hello */
     char *s = "world";
     if (s == NULL) return 0;
     return printf("hi %s\n", s);
 }}
-    ],
-    [
-      'python', q{# fibonacci
+  ],
+  [
+    'python', q{# fibonacci
 def fib(n):
     a, b = 0, 1
     for _ in range(n):
         a, b = b, a + b
     return a}
-    ],
-    [
-      'bash', q{#!/bin/sh
+  ],
+  [
+    'bash', q{#!/bin/sh
 set -eu
 for f in *.txt; do
     grep -i "TODO" "$f" || true
 done}
-    ],
-    [
-      'perl', q{use strict;
+  ],
+  [
+    'perl', q{use strict;
 my @primes = grep { !($_ % 2) } 2..50;
 print join(',', @primes), "\n";}
-    ],
-  );
-  my @bits;
-  push @bits, qq{<h2>token classes</h2>};
-  push @bits,
-    qq{<table class="cms-table"><thead><tr><th>class</th><th>swatch</th></tr></thead><tbody>};
-  for my $c (@cls) {
-    push @bits,
-      qq{<tr><td><code>hl-$c</code></td><td><pre class="hl"><code><span class="hl-$c">sample text $c</span></code></pre></td></tr>};
-  }
-  push @bits, qq{</tbody></table>};
-  push @bits, qq{<h2>code samples</h2>};
-  for my $s (@samples) {
-    my ($lang, $code) = @$s;
-    my $hl = Iczelia::Highlight::highlight($code, $lang);
-    push @bits, qq{<h3>$lang</h3>};
-    push @bits, $hl;
-  }
-  push @bits, qq{<h2>inside a blockquote</h2>};
-  push @bits,
-    qq{<blockquote><p>quoted text with <code>inline code</code> in the middle &mdash; the inline-code rule is italic by default; check it doesn't fight the box.</p>};
-  push @bits,
-    Iczelia::Highlight::highlight(q{int x = 1; /* in a quote */}, 'c');
-  push @bits, qq{</blockquote>};
+  ],
+);
 
+sub _theme_preview {
+  my ($ctx, $req) = @_;
+  my @samples =
+    map +{lang => $_->[0], html => Iczelia::Highlight::highlight($_->[1], $_->[0])},
+    @THEME_PREVIEW_SAMPLES;
   my $vars = $ctx->{render}->base_vars(
-    title     => 'iczelia :: theme preview',
-    page      => {is_admin_preview => 1},
-    body_html => join('', @bits),
+    title   => 'iczelia :: theme preview',
+    page    => {is_admin_preview => 1},
+    classes => [@THEME_PREVIEW_CLASSES],
+    samples => \@samples,
+    blockquote_sample_html =>
+      Iczelia::Highlight::highlight(q{int x = 1; /* in a quote */}, 'c'),
   );
-
-  # Inherit the public page layout so the theme CSS actually applies.
   return Iczelia::HTTP::html(
     $ctx->{template}->render('views/theme_preview.tpl', $vars));
 }

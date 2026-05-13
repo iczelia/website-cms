@@ -24,6 +24,30 @@ use Compress::Zlib       ();
 
 # In-process gzip (Gzip::Zopfli) and brotli (IO::Compress::Brotli).
 
+# Content-Type predicate: returns 1 if compressing this body would
+# meaningfully shrink it (text/* and structured-data application/*).
+# Already-compressed media (image/*, audio/*, video/*, font/*,
+# application/zip|gzip|...) returns 0.
+my $COMPRESSIBLE_RE =
+  qr{^(?:text/|application/(?:json|javascript|xml|[\w.+-]+\+xml)\b)}i;
+my $BINARY_MEDIA_RE = qr{^(?:image|audio|video|font)/}i;
+my $BINARY_APP_RE   =
+  qr{^application/(?:zip|gzip|x-tar|x-bzip|octet-stream|font-woff|x-protobuf|pdf)\b}i;
+
+sub is_compressible_ct {
+  my ($ct) = @_;
+  return 0 unless defined $ct;
+  return ($ct =~ $COMPRESSIBLE_RE) ? 1 : 0;
+}
+
+sub is_binary_media_ct {
+  my ($ct) = @_;
+  return 0 unless defined $ct;
+  return 1 if $ct =~ $BINARY_MEDIA_RE;
+  return 1 if $ct =~ $BINARY_APP_RE;
+  return 0;
+}
+
 sub brotli {
   my ($body, $quality) = @_;
   return undef unless defined $body && length $body;

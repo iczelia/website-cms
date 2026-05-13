@@ -17,9 +17,8 @@
 package Iczelia::SafeMarkup;
 use strict;
 use warnings;
-use Encode        ();
-use Iczelia::Util qw(escape_html);
-use Iczelia::Util ();
+use Iczelia::Util      qw(escape_html);
+use Iczelia::Highlight ();
 use Iczelia::MarkupCommon
   qw(hide_code_dollars restore_code_dollars extract_math);
 
@@ -94,7 +93,6 @@ sub render {
         push @body, $lines[$i++];
       }
       $i++ if $i < @lines;
-      require Iczelia::Highlight;
 
       # Untrusted: known tags only, others fall back to plain.
       my $tag =

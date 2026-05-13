@@ -206,51 +206,59 @@ sub dashboard_data {
   # Flush pending events first so live-day numbers are reasonable.
   aggregate_due($db);
 
-  my $start;
-  if    ($range eq '7d')  {$start = "date('now','-6 days')"}
-  elsif ($range eq '30d') {$start = "date('now','-29 days')"}
-  else                    {$start = "'1970-01-01'"}
+  # Compute the date boundary in SQLite, bind everywhere else.
+  my $start = $db->one(
+    q{SELECT CASE
+        WHEN ? = '7d'  THEN date('now','-6 days')
+        WHEN ? = '30d' THEN date('now','-29 days')
+        ELSE '1970-01-01'
+      END}, $range, $range
+  );
 
-  my $bot_clause = $exclude_bots ? "(views - bots)" : "views";
-  my $rows       = $db->all(
-    qq{
-        SELECT date,
-               SUM(views)   AS views,
-               SUM(uniques) AS uniques,
-               SUM(bots)    AS bots
-          FROM analytics_daily
-         WHERE date >= $start
-         GROUP BY date
-         ORDER BY date
-    }
+  my $rows = $db->all(
+    q{SELECT date,
+             SUM(views)   AS views,
+             SUM(uniques) AS uniques,
+             SUM(bots)    AS bots
+        FROM analytics_daily
+       WHERE date >= ?
+       GROUP BY date
+       ORDER BY date}, $start
   );
-  my $top_paths = $db->all(
-    qq{
-        SELECT path,
+  # The "order by" column can't be bound; pick the SQL at the Perl level.
+  my $top_paths = $exclude_bots
+    ? $db->all(
+      q{SELECT path,
                SUM(views)   AS views,
                SUM(uniques) AS uniques,
                SUM(bots)    AS bots
           FROM analytics_daily
-         WHERE date >= $start
+         WHERE date >= ?
          GROUP BY path
-         ORDER BY $bot_clause DESC
-         LIMIT 20
-    }
-  );
+         ORDER BY (SUM(views) - SUM(bots)) DESC
+         LIMIT 20}, $start
+    )
+    : $db->all(
+      q{SELECT path,
+               SUM(views)   AS views,
+               SUM(uniques) AS uniques,
+               SUM(bots)    AS bots
+          FROM analytics_daily
+         WHERE date >= ?
+         GROUP BY path
+         ORDER BY SUM(views) DESC
+         LIMIT 20}, $start
+    );
   my $top_refs = $db->all(
-    qq{
-        SELECT referer_host AS host, SUM(count) AS count
-          FROM analytics_referrers
-         WHERE date >= $start
-         GROUP BY referer_host
-         ORDER BY count DESC LIMIT 20
-    }
+    q{SELECT referer_host AS host, SUM(count) AS count
+        FROM analytics_referrers
+       WHERE date >= ?
+       GROUP BY referer_host
+       ORDER BY count DESC LIMIT 20}, $start
   );
   my $totals = $db->row(
-    qq{
-        SELECT SUM(views) AS views, SUM(uniques) AS uniques, SUM(bots) AS bots
-          FROM analytics_daily WHERE date >= $start
-    }
+    q{SELECT SUM(views) AS views, SUM(uniques) AS uniques, SUM(bots) AS bots
+        FROM analytics_daily WHERE date >= ?}, $start
   ) || {views => 0, uniques => 0, bots => 0};
   return {
     range       => $range,

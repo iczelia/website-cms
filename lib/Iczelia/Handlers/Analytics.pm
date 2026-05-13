@@ -21,6 +21,8 @@ use Iczelia::HTTP            ();
 use Iczelia::Analytics       ();
 use Iczelia::Handlers::Admin ();
 
+use constant ANALYTICS_RAW_LIMIT => 200;
+
 sub register {
   my ($class, $router, $ctx) = @_;
   my $gate = \&Iczelia::Handlers::Admin::gate;
@@ -38,23 +40,18 @@ sub _dashboard {
     range => $range,
     bots  => $bots
   );
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_analytics.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title     => 'analytics',
-        range     => $range,
-        bots      => $bots,
-        data      => $data,
-        svg_views => Iczelia::Analytics::render_bars_svg(
-          $data->{days}, column => 'views'
-        ),
-        svg_uniques => Iczelia::Analytics::render_bars_svg(
-          $data->{days}, column => 'uniques'
-        ),
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_analytics.tpl',
+    title     => 'analytics',
+    range     => $range,
+    bots      => $bots,
+    data      => $data,
+    svg_views => Iczelia::Analytics::render_bars_svg(
+      $data->{days}, column => 'views'
+    ),
+    svg_uniques => Iczelia::Analytics::render_bars_svg(
+      $data->{days}, column => 'uniques'
+    ),
   );
 }
 
@@ -62,22 +59,17 @@ sub _raw {
   my ($ctx, $req) = @_;
   my $rows = $ctx->{db}->all(
     q{SELECT id, ts, path, status, method, visitor_hash, referer_host, ua_class
-            FROM analytics_events ORDER BY id DESC LIMIT 200}
+            FROM analytics_events ORDER BY id DESC LIMIT } . ANALYTICS_RAW_LIMIT
   );
   for my $r (@$rows) {
     my @t = gmtime($r->{ts});
     $r->{ts_fmt} = sprintf '%04d-%02d-%02d %02d:%02d:%02d',
       $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0];
   }
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_analytics_raw.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title  => 'analytics raw',
-        events => $rows,
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_analytics_raw.tpl',
+    title  => 'analytics raw',
+    events => $rows,
   );
 }
 

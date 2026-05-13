@@ -10,6 +10,24 @@
     <div class="ab-rule"></div>
 
     <section class="ab-section ab-post-body">
-      {{{ body_html }}}
+      <h2>token classes</h2>
+      <table class="cms-table">
+        <thead><tr><th>class</th><th>swatch</th></tr></thead>
+        <tbody>
+          {% for c in classes %}
+            <tr><td><code>hl-{{ c }}</code></td><td><pre class="hl"><code><span class="hl-{{ c }}">sample text {{ c }}</span></code></pre></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <h2>code samples</h2>
+      {% for s in samples %}
+        <h3>{{ s.lang }}</h3>
+        {{{ s.html }}}
+      {% endfor %}
+      <h2>inside a blockquote</h2>
+      <blockquote>
+        <p>quoted text with <code>inline code</code> in the middle &mdash; the inline-code rule is italic by default; check it doesn't fight the box.</p>
+        {{{ blockquote_sample_html }}}
+      </blockquote>
     </section>
 {% endblock %}

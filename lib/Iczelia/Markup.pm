@@ -17,7 +17,8 @@
 package Iczelia::Markup;
 use strict;
 use warnings;
-use Iczelia::Util qw(escape_html);
+use Iczelia::Util      qw(escape_html);
+use Iczelia::Highlight ();
 use Iczelia::MarkupCommon
   qw(hide_code_dollars restore_code_dollars extract_math);
 
@@ -89,7 +90,6 @@ sub render {
       }
       $i++ if $i < @lines;
       my $code = join("\n", @body);
-      require Iczelia::Highlight;
       push @blocks, Iczelia::Highlight::highlight($code, $lang);
       next;
     }
@@ -194,7 +194,6 @@ sub render {
           last;
         }
       }
-      require Iczelia::Highlight;
       push @blocks, Iczelia::Highlight::highlight(join("\n", @body), '');
       next;
     }

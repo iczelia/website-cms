@@ -40,15 +40,10 @@ sub _dynamic_list {
     $r->{updated_fmt} = ts_fmt($r->{updated_at});
     $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "dynpage:del:$r->{id}");
   }
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_dynamic_list.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title => 'dynamic pages',
-        pages => $rows,
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_dynamic_list.tpl',
+    title => 'dynamic pages',
+    pages => $rows,
   );
 }
 
@@ -84,24 +79,19 @@ sub _render_dynamic_form {
     push @field_html, field_for_form($f, $data->{$f->{name}});
   }
 
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_dynamic_edit.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title         => $row ? "edit $row->{route}" : 'new dynamic page',
-        row           => $row,
-        form_action   => $action,
-        csrf_form     => $ctx->{auth}->csrf_token($sid, $form_name),
-        template_opts => $tpl_opts,
-        current_tpl   => $current_tpl,
-        schema        => $schema,
-        fields_html   => \@field_html,
-        error         => $opt{error},
-        route_value   => ($opt{params}{route} // ($row ? $row->{route} : '/')),
-        title_value   => ($opt{params}{title} // ($row ? $row->{title} : '')),
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_dynamic_edit.tpl',
+    title         => $row ? "edit $row->{route}" : 'new dynamic page',
+    row           => $row,
+    form_action   => $action,
+    csrf_form     => $ctx->{auth}->csrf_token($sid, $form_name),
+    template_opts => $tpl_opts,
+    current_tpl   => $current_tpl,
+    schema        => $schema,
+    fields_html   => \@field_html,
+    error         => $opt{error},
+    route_value   => ($opt{params}{route} // ($row ? $row->{route} : '/')),
+    title_value   => ($opt{params}{title} // ($row ? $row->{title} : '')),
   );
 }
 

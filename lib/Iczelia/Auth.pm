@@ -234,7 +234,7 @@ sub current_user {
 sub session_cookie {
   my ($self, $sid, $req) = @_;
   my $value  = $sid eq '' ? '' : "$sid." . $self->_sign_sid($sid);
-  my $secure = is_https($req);
+  my $secure = Iczelia::HTTP::is_https($req);
   return Iczelia::HTTP::make_cookie(
     name     => COOKIE_NAME,
     value    => $value,
@@ -244,13 +244,6 @@ sub session_cookie {
     secure   => $secure,
     max_age  => ($sid eq '' ? 0 : SESSION_TTL),
   );
-}
-
-sub is_https {
-  my ($req) = @_;
-  return 0 unless $req && ref($req) eq 'HASH';
-  my $proto = $req->{headers}{'x-forwarded-proto'} // '';
-  return $proto =~ /^https$/i ? 1 : 0;
 }
 
 sub _sign_sid {

@@ -94,16 +94,9 @@ sub _cache_control_for {
 }
 
 # Rows whose content-type is already-compressed media (image, font,
-# pre-zipped). Stored as body but never gz/br'd.
-sub _is_binary_media {
-  my ($ct) = @_;
-  return 0 unless defined $ct;
-  return 1 if $ct =~ m{^(?:image|audio|video|font)/}i;
-  return 1
-    if $ct =~
-    m{^application/(?:zip|gzip|x-tar|x-bzip|octet-stream|font-woff|x-protobuf|pdf)\b}i;
-  return 0;
-}
+# pre-zipped). Stored as body but never gz/br'd. Delegates to
+# Iczelia::Compress so the predicate lives next to the codecs.
+sub _is_binary_media {Iczelia::Compress::is_binary_media_ct($_[0])}
 
 # Cache miss when a post's publish_at just crossed and listings are
 # stale. tx_immediate serializes concurrent workers; per-worker

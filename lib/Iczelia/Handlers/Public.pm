@@ -20,6 +20,8 @@ use warnings;
 use Iczelia::HTTP ();
 use Iczelia::Util qw(escape_url split_tags);
 
+use constant SEARCH_RESULTS_LIMIT => 30;
+
 sub register {
   my ($class, $router, $ctx) = @_;
   $router->get('/',                 sub {_home($ctx, @_)});
@@ -187,7 +189,7 @@ sub _search {
                     FROM posts_fts
                    WHERE posts_fts MATCH ?
                      AND kind IN ('blog','journal')
-                ORDER BY rank LIMIT 30}, $match
+                ORDER BY rank LIMIT } . SEARCH_RESULTS_LIMIT, $match
       );
     } || [];
     $_->{url} = "/$_->{kind}/$_->{slug}/" for @$rows;

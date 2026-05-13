@@ -24,7 +24,7 @@ use File::Temp    ();
 use MIME::Base64  ();
 use POSIX         ();
 use Time::HiRes   ();
-use Iczelia::Util qw(escape_html escape_attr clamp_int clamp_flt);
+use Iczelia::Util qw(escape_html clamp_int clamp_flt);
 
 # Render LaTeX math to vector SVG embedded as a data: URL. The cache
 # hash folds in render settings so an admin tweak invalidates cleanly.
@@ -181,9 +181,24 @@ sub _compile {
     DIR      => $self->{tmp_dir},
     CLEANUP  => 1,
   );
-
   my $fname = "$scratch/frag";
 
+  my $err = _build_tex_doc($fname, $display, $tex, $cfg);
+  return (undef, $err) if defined $err;
+
+  $err = $self->_run_latex($scratch, $fname);
+  return (undef, $err) if defined $err;
+
+  $err = $self->_run_dvisvgm($fname);
+  return (undef, $err) if defined $err;
+
+  return $self->_load_and_wrap_svg($fname, $cfg, $display, $tex);
+}
+
+# Write the .tex source for one math fragment. Returns undef on success
+# or a short error string on write failure.
+sub _build_tex_doc {
+  my ($fname, $display, $tex, $cfg) = @_;
   my $math = $display ? "\\\[$tex\\\]"     : "\$$tex\$";
   my $pt   = $display ? $cfg->{display_pt} : $cfg->{inline_pt};
   my ($docclass, $clsopt) = _docclass_for_pt($pt);
@@ -209,65 +224,76 @@ $math
 \\end{document}
 END_TEX
 
-  open my $fh, '>:raw', "$fname.tex" or return (undef, "open frag.tex: $!");
+  open my $fh, '>:raw', "$fname.tex" or return "open frag.tex: $!";
   print $fh Encode::encode_utf8($body);
   close $fh;
+  return undef;
+}
 
+# Run latex with the safe-mode env vars; returns undef on success or an
+# error string. Sets `-no-shell-escape`, `-halt-on-error`,
+# `nonstopmode`. The shell-escape lockdown is layered with the
+# `openin_any` / `openout_any` env-var fences.
+sub _run_latex {
+  my ($self, $scratch, $fname) = @_;
   local $ENV{openin_any}  = 'p';
   local $ENV{openout_any} = 'p';
   local $ENV{TEXMFOUTPUT} = $scratch;
   local $ENV{TEXINPUTS}   = '.:';
+  my ($rc, $log) = $self->_run_capped(
+    $self->{latex},
+    '-no-shell-escape', '-interaction=nonstopmode',
+    '-halt-on-error',   "-output-directory=$scratch",
+    "$fname.tex",
+  );
+  return "latex failed (rc=$rc):\n" . _log_tail($log, 40) if $rc != 0;
+  return "no dvi produced" unless -s "$fname.dvi";
+  return undef;
+}
 
-  my ($rc, $log) =
-    $self->_run_capped($self->{latex}, '-no-shell-escape',
-    '-interaction=nonstopmode', '-halt-on-error', "-output-directory=$scratch",
-    "$fname.tex",);
-  if ($rc != 0) {
-    return (undef, "latex failed (rc=$rc):\n" . _log_tail($log, 40));
-  }
-  return (undef, "no dvi produced") unless -s "$fname.dvi";
-
-  my ($rc2, $info) = $self->_run_capped(
+# Convert the .dvi to .svg with dvisvgm; returns undef on success or
+# an error string. --no-fonts paths the text so we don't ship CM fonts.
+sub _run_dvisvgm {
+  my ($self, $fname) = @_;
+  my ($rc, $info) = $self->_run_capped(
     $self->{dvisvgm},
-    '--no-fonts',    # text -> <path>, no font dependency
-    '--bbox=min',    # tight crop around ink (display math
-                     # doesn't fill the LaTeX line width)
+    '--no-fonts',       # text -> <path>, no font dependency
+    '--bbox=min',       # tight crop around ink (display math
+                        # doesn't fill the LaTeX line width)
     '--exact-bbox',
     '--precision=4',
     '--optimize=all',
     "--output=$fname.svg",
     "$fname.dvi",
   );
-  if ($rc2 != 0 || !-s "$fname.svg") {
-    return (undef, "dvisvgm failed (rc=$rc2): " . _log_tail($info // '', 6));
-  }
+  return "dvisvgm failed (rc=$rc): " . _log_tail($info // '', 6)
+    if $rc != 0 || !-s "$fname.svg";
+  return undef;
+}
 
+# Read the .svg, wrap it (white fill + computed dimensions), base64-
+# encode, and emit the <img> tag. Returns ($img, $err).
+sub _load_and_wrap_svg {
+  my ($self, $fname, $cfg, $display, $tex) = @_;
   open my $sf, '<:raw', "$fname.svg" or return (undef, "open svg: $!");
   local $/;
   my $svg = <$sf>;
   close $sf;
-  if (length $svg > MAX_OUTPUT) {
-    return (undef, "svg too large (" . length($svg) . " bytes)");
-  }
+  return (undef, "svg too large (" . length($svg) . " bytes)")
+    if length $svg > MAX_OUTPUT;
 
   my ($svg_out, $w_px, $h_px, $depth_px) = _wrap_svg($svg, $cfg, $display);
   return (undef, "svg parse failed") unless defined $svg_out;
 
   my $b64 = MIME::Base64::encode_base64($svg_out, '');
-  my $alt = escape_attr($tex);
+  my $alt = escape_html($tex);
   my $cls = $display ? 'math math-display' : 'math math-inline';
-
-  my $img;
-  if ($display) {
-    $img = sprintf
-      q{<img class="%s" alt="%s" title="%s" width="%d" height="%d" src="data:image/svg+xml;base64,%s">},
-      $cls, $alt, $alt, $w_px, $h_px, $b64;
-  }
-  else {
-    $img = sprintf
-      q{<img class="%s" alt="%s" title="%s" width="%d" height="%d" src="data:image/svg+xml;base64,%s" style="vertical-align:-%dpx">},
+  my $img =
+    $display
+    ? sprintf q{<img class="%s" alt="%s" title="%s" width="%d" height="%d" src="data:image/svg+xml;base64,%s">},
+      $cls, $alt, $alt, $w_px, $h_px, $b64
+    : sprintf q{<img class="%s" alt="%s" title="%s" width="%d" height="%d" src="data:image/svg+xml;base64,%s" style="vertical-align:-%dpx">},
       $cls, $alt, $alt, $w_px, $h_px, $b64, $depth_px;
-  }
   return ($img, undef);
 }
 

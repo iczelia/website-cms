@@ -24,6 +24,11 @@ use Iczelia::SafeMarkup ();
 use Iczelia::Markup     ();
 use Iczelia::Throttle;
 
+use constant {
+  GUESTBOOK_PUBLIC_ENTRIES_LIMIT => 200,
+  GUESTBOOK_ADMIN_APPROVED_LIMIT => 50,
+};
+
 # Public submission + admin moderation. Admin routes are gated via
 # Iczelia::Handlers::Admin::gate so they share the same auth chrome.
 
@@ -107,7 +112,7 @@ sub render_public {
         path     => '/',
         httponly => 1,
         samesite => 'Lax',
-        secure   => Iczelia::Auth::is_https($req),
+        secure   => Iczelia::HTTP::is_https($req),
       )
     ];
   }
@@ -135,7 +140,7 @@ sub _load_entries {
         SELECT id, posted_at, nickname, body_html, admin_replied_at, admin_reply_html
         FROM guestbook_entries
         WHERE approved_at IS NOT NULL AND rejected_at IS NULL
-        ORDER BY posted_at DESC LIMIT 200}
+        ORDER BY posted_at DESC LIMIT } . GUESTBOOK_PUBLIC_ENTRIES_LIMIT
   );
   my @out;
   for my $r (@$rows) {
@@ -224,7 +229,7 @@ sub _admin_list {
                admin_reply_html, admin_replied_at
         FROM guestbook_entries
         WHERE approved_at IS NOT NULL AND rejected_at IS NULL
-        ORDER BY posted_at DESC LIMIT 50}
+        ORDER BY posted_at DESC LIMIT } . GUESTBOOK_ADMIN_APPROVED_LIMIT
   );
 
   for my $e (@$pending, @$approved) {
@@ -251,14 +256,12 @@ sub _admin_list {
   }
 
   require Iczelia::Handlers::Admin;
-  my $vars = Iczelia::Handlers::Admin::admin_vars(
-    $ctx, $req,
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_guestbook.tpl',
     title    => 'guestbook moderation',
     pending  => $pending,
     approved => $approved,
   );
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render('views/admin_guestbook.tpl', $vars));
 }
 
 sub _admin_approve {

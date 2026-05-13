@@ -41,16 +41,11 @@ sub _lang_list {
     $r->{csrf_del}    = $ctx->{auth}->csrf_token($sid, "lang:del:$r->{id}");
   }
   my @builtins = Iczelia::Highlight::languages();
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_highlight_list.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title        => 'highlighter languages',
-        langs        => $rows,
-        builtins_str => join(', ', @builtins),
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_highlight_list.tpl',
+    title        => 'highlighter languages',
+    langs        => $rows,
+    builtins_str => join(', ', @builtins),
   );
 }
 
@@ -86,19 +81,14 @@ sub _render_lang_form {
       string_quotes => '"',
     }
     );
-  return Iczelia::HTTP::html(
-    $ctx->{template}->render(
-      'views/admin_highlight_edit.tpl',
-      Iczelia::Handlers::Admin::admin_vars(
-        $ctx, $req,
-        title       => $row ? "edit $row->{name}" : 'new language',
-        row         => $row,
-        form_action => $action,
-        csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
-        error       => $opt{error},
-        rec         => $rec,
-      )
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_highlight_edit.tpl',
+    title       => $row ? "edit $row->{name}" : 'new language',
+    row         => $row,
+    form_action => $action,
+    csrf_form   => $ctx->{auth}->csrf_token($sid, $form_name),
+    error       => $opt{error},
+    rec         => $rec,
   );
 }
 

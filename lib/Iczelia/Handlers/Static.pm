@@ -110,18 +110,14 @@ sub register {
   }
 
   # Root-level CSS files referenced directly by the chrome.
-  $router->get('/common.compat.css',
-    sub {_serve_safe($r_chrome, "common.compat.css")});
-  $router->get('/style.mobile.compat.css',
-    sub {_serve_safe($r_chrome, "style.mobile.compat.css")});
-  $router->get('/style.600.compat.css',
-    sub {_serve_safe($r_chrome, "style.600.compat.css")});
-  $router->get('/style.800.compat.css',
-    sub {_serve_safe($r_chrome, "style.800.compat.css")});
-  $router->get('/style.1024.compat.css',
-    sub {_serve_safe($r_chrome, "style.1024.compat.css")});
-  $router->get('/about.compat.css',
-    sub {_serve_safe($r_chrome, "about.compat.css")});
+  for my $name (qw(
+    common.compat.css about.compat.css
+    style.mobile.compat.css style.600.compat.css
+    style.800.compat.css style.1024.compat.css
+    ))
+  {
+    $router->get("/$name", sub {_serve_safe($r_chrome, $name)});
+  }
 
   # Uploaded media. Stray SVGs (uploaded directly into the dir) are
   # served as text/plain so the browser can't execute embedded script.

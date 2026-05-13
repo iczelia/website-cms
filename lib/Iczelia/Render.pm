@@ -18,7 +18,7 @@ package Iczelia::Render;
 use strict;
 use warnings;
 use Carp            qw(croak);
-use Iczelia::Util   qw(escape_html escape_attr clamp_int clamp_flt decode_json_hash);
+use Iczelia::Util   qw(escape_html clamp_int clamp_flt decode_json_hash);
 use Iczelia::Time   qw(fmt_date fmt_ago atom_iso clock_string);
 use Iczelia::Markup ();
 use Iczelia::Minify ();
@@ -96,103 +96,23 @@ sub cache    {$_[0]->{cache}}
 
 sub base_vars {
   my ($self, %extra) = @_;
-  my $now = time;
-  if (!$self->{_settings_cache}
-    || $now - ($self->{_settings_at} // 0) >= SETTINGS_CACHE_TTL)
-  {
-    my $rows = $self->{db}->all('SELECT key, value FROM settings');
-    my %s;
-    for my $r (@$rows) {
-      my ($k, $v) = ($r->{key}, $r->{value});
-      my @parts = split /\./, $k, 2;
-      if   (@parts == 2) {$s{$parts[0]}{$parts[1]} = $v}
-      else               {$s{$k}                   = $v}
-    }
-    $self->{_settings_cache} = \%s;
-    $self->{_settings_at}    = $now;
-    delete $self->{_theme_css_cache};
-  }
+  $self->_refresh_settings;
 
   # Shallow-copy the top level so per-call %extra additions don't
   # leak back into the cache.
   my %s      = %{$self->{_settings_cache}};
   my $author = $s{site}{author} // '';
-
-  # Synthesise "(c) START - YEAR HOLDER" when the operator didn't.
-  my $now_year = (gmtime)[5] + 1900;
-  my $copy     = $s{site}{copyright};
-  unless (defined $copy && length $copy) {
-    my $start  = $s{site}{copyright_start}  // 2019;
-    my $holder = $s{site}{copyright_holder} // ($author || 'iczelia');
-    $copy = "(c) $start - $now_year $holder";
-  }
-
-  # short = "(c) <years>", author = holder. Lets the chrome drop
-  # the holder at narrow breakpoints.
-  my $copy_short  = $copy;
-  my $copy_author = $s{site}{copyright_holder} // $author;
-  $copy_short =~ s/\s*\(c\)/(c)/;
-  if ($copy_short =~ s/^(.*\d{4})\s+(\S.*)$/$1/) {
-    $copy_author = $2 unless defined $s{site}{copyright_holder};
-  }
+  my ($copy, $copy_short, $copy_author) = _build_copyright(\%s, $author);
 
   my $email      = $s{site}{email} // '';
   my $email_html = _obfuscate_email($email);
+  my $theme_css  = $self->{_theme_css_cache} //= _theme_css(\%s);
+  my %math       = _math_params(\%s);
+  my %figure     = _figure_params(\%s);
 
-  my $theme_css = $self->{_theme_css_cache} //= _theme_css(\%s);
-  my %math      = _math_params(\%s);
-  my %figure    = _figure_params(\%s);
-
-  # SEO/social <head> metadata. Callers pass `meta => {...}` to
-  # override the website-wide defaults (canonical URL, description,
-  # keywords, og:type, article timestamps, robots, ...). Relative
-  # paths in canonical/image are resolved against site.base_url.
   my $base_url = $s{site}{base_url} // '';
   $base_url =~ s{/+$}{};
-  my %meta = (
-    description    => $s{site}{description} // $s{site}{tagline} // '',
-    keywords       => $s{site}{keywords}    // '',
-    canonical      => '',
-    og_type        => 'website',
-    og_title       => '',
-    published_time => '',
-    modified_time  => '',
-    robots         => '',
-  );
-  if (ref $extra{meta} eq 'HASH') {
-    my $o = delete $extra{meta};
-    %meta = (%meta, %$o);
-  }
-
-  # og:image: explicit override, else first body image, else site card,
-  # else logo. Made absolute below. (posts use `post`, pages use `data`.)
-  unless (length($meta{image} // '')) {
-    my $post = ref $extra{post} eq 'HASH' ? $extra{post} : {};
-    my $data = ref $extra{data} eq 'HASH' ? $extra{data} : {};
-    $meta{image} =
-         _first_content_img($post->{body_html})
-      || _first_content_img($data->{body_html})
-      || _first_content_img($data->{intro_html})
-      || $s{site}{og_image}
-      || '/assets-1024x768/iczelia-128.png';
-  }
-
-  for my $k (qw(canonical image)) {
-    next unless defined $meta{$k} && $meta{$k} =~ m{^/};
-    $meta{$k} = "$base_url$meta{$k}" if length $base_url;
-  }
-  $meta{og_url} = $meta{canonical} unless defined $meta{og_url};
-  $meta{og_locale} = $s{site}{og_locale} // 'en_US'
-    unless defined $meta{og_locale};
-
-  # og:title: an explicit override, else the page <title> with the
-  # "<site> :: " prefix dropped so it doesn't echo og:site_name.
-  my $site_title = $s{site}{title} // 'iczelia';
-  my $og_title   = $meta{og_title};
-  $og_title = $extra{title} if !defined $og_title || !length $og_title;
-  $og_title = $site_title   if !defined $og_title || !length $og_title;
-  $og_title =~ s/^\Q$site_title\E\s*::\s*//;
-  $meta{og_title} = length $og_title ? $og_title : $site_title;
+  my $meta = _build_meta(\%s, \%extra, $base_url);
 
   return {
     site => {
@@ -216,10 +136,105 @@ sub base_vars {
       figure    => \%figure,
       math      => \%math,
     },
-    meta => \%meta,
+    meta => $meta,
     page => {},
     %extra,
   };
+}
+
+sub _refresh_settings {
+  my ($self) = @_;
+  my $now = time;
+  return
+    if $self->{_settings_cache}
+    && $now - ($self->{_settings_at} // 0) < SETTINGS_CACHE_TTL;
+  my $rows = $self->{db}->all('SELECT key, value FROM settings');
+  my %s;
+  for my $r (@$rows) {
+    my ($k, $v) = ($r->{key}, $r->{value});
+    my @parts = split /\./, $k, 2;
+    if   (@parts == 2) {$s{$parts[0]}{$parts[1]} = $v}
+    else               {$s{$k}                   = $v}
+  }
+  $self->{_settings_cache} = \%s;
+  $self->{_settings_at}    = $now;
+  delete $self->{_theme_css_cache};
+}
+
+# Returns ($copy, $copy_short, $copy_author).
+# Synthesise "(c) START - YEAR HOLDER" when the operator didn't.
+# short = "(c) <years>", author = holder; lets the chrome drop the
+# holder at narrow breakpoints.
+sub _build_copyright {
+  my ($s, $author) = @_;
+  my $now_year = (gmtime)[5] + 1900;
+  my $copy     = $s->{site}{copyright};
+  unless (defined $copy && length $copy) {
+    my $start  = $s->{site}{copyright_start}  // 2019;
+    my $holder = $s->{site}{copyright_holder} // ($author || 'iczelia');
+    $copy = "(c) $start - $now_year $holder";
+  }
+  my $copy_short  = $copy;
+  my $copy_author = $s->{site}{copyright_holder} // $author;
+  $copy_short =~ s/\s*\(c\)/(c)/;
+  if ($copy_short =~ s/^(.*\d{4})\s+(\S.*)$/$1/) {
+    $copy_author = $2 unless defined $s->{site}{copyright_holder};
+  }
+  return ($copy, $copy_short, $copy_author);
+}
+
+# SEO/social <head> metadata. Callers pass `meta => {...}` in %extra to
+# override defaults (canonical URL, description, keywords, og:type,
+# article timestamps, robots, ...). Relative paths in canonical/image
+# resolve against $base_url. Also reads `post` / `data` from %extra to
+# cascade og:image.
+sub _build_meta {
+  my ($s, $extra, $base_url) = @_;
+  my %meta = (
+    description    => $s->{site}{description} // $s->{site}{tagline} // '',
+    keywords       => $s->{site}{keywords}    // '',
+    canonical      => '',
+    og_type        => 'website',
+    og_title       => '',
+    published_time => '',
+    modified_time  => '',
+    robots         => '',
+  );
+  if (ref $extra->{meta} eq 'HASH') {
+    my $o = delete $extra->{meta};
+    %meta = (%meta, %$o);
+  }
+
+  # og:image: explicit override, else first body image, else site card,
+  # else logo. (posts use `post`, pages use `data`.)
+  unless (length($meta{image} // '')) {
+    my $post = ref $extra->{post} eq 'HASH' ? $extra->{post} : {};
+    my $data = ref $extra->{data} eq 'HASH' ? $extra->{data} : {};
+    $meta{image} =
+         _first_content_img($post->{body_html})
+      || _first_content_img($data->{body_html})
+      || _first_content_img($data->{intro_html})
+      || $s->{site}{og_image}
+      || '/assets-1024x768/iczelia-128.png';
+  }
+
+  for my $k (qw(canonical image)) {
+    next unless defined $meta{$k} && $meta{$k} =~ m{^/};
+    $meta{$k} = "$base_url$meta{$k}" if length $base_url;
+  }
+  $meta{og_url} = $meta{canonical} unless defined $meta{og_url};
+  $meta{og_locale} = $s->{site}{og_locale} // 'en_US'
+    unless defined $meta{og_locale};
+
+  # og:title: explicit override, else page <title> with the "<site> :: "
+  # prefix dropped so it doesn't echo og:site_name.
+  my $site_title = $s->{site}{title} // 'iczelia';
+  my $og_title   = $meta{og_title};
+  $og_title = $extra->{title} if !defined $og_title || !length $og_title;
+  $og_title = $site_title     if !defined $og_title || !length $og_title;
+  $og_title =~ s/^\Q$site_title\E\s*::\s*//;
+  $meta{og_title} = length $og_title ? $og_title : $site_title;
+  return \%meta;
 }
 
 # first content <img> src, for og:image; skips rendered-LaTeX PNGs

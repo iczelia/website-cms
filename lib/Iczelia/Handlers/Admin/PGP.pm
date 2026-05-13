@@ -19,7 +19,9 @@ use strict;
 use warnings;
 use Iczelia::HTTP                   ();
 use Iczelia::Time                   qw(ts_fmt);
-use Iczelia::Handlers::Admin::Forms qw(simple_form_render_html);
+
+# Admin (which is loaded before us via App::build) provides render_admin
+# at runtime; we don't `use` it here to avoid a circular load.
 
 use constant PGP_BODY_MAX => 256 * 1024;
 
@@ -43,43 +45,14 @@ sub _pgp_form {
   my $path  = _pgp_path($ctx);
   my $size  = -e $path ? (-s $path)      : 0;
   my $mtime = -e $path ? (stat $path)[9] : 0;
-
-  my @bits;
-  push @bits,
-    '<p>The key uploaded here is served at <code>/pub.pgp</code> with content-type <code>application/pgp-keys</code>.</p>';
-  if ($size) {
-    push @bits, sprintf '<p>Currently installed: %d bytes, uploaded %s.</p>',
-      $size, ts_fmt($mtime);
-  }
-  else {
-    push @bits,
-      '<p>No key installed. <code>/pub.pgp</code> currently 404s.</p>';
-  }
-  push @bits, '<p><label>Upload a new key (.pgp / .asc / armored text)<br>'
-    . '<input type="file" name="file" accept=".pgp,.asc,application/pgp-keys,text/plain" required></label></p>';
-
-  my $body =
-    '<form class="cms-form" method="POST" action="/admin/pgp/" enctype="multipart/form-data">'
-    . '<input type="hidden" name="csrf" value="'
-    . $ctx->{auth}->csrf_token($sid, 'pgp') . '">'
-    . join('', @bits)
-    . '<p class="cms-actions"><button type="submit" class="cms-btn cms-btn-primary">upload</button></p>'
-    . '</form>';
-  if ($size) {
-    $body .=
-      '<form class="cms-form" method="POST" action="/admin/pgp/delete" onsubmit="return confirm(\'remove the installed PGP key?\')">'
-      . '<input type="hidden" name="csrf" value="'
-      . $ctx->{auth}->csrf_token($sid, 'pgp:delete') . '">'
-      . '<p class="cms-actions"><button type="submit" class="cms-btn cms-btn-danger">remove key</button></p>'
-      . '</form>';
-  }
-
-  return Iczelia::HTTP::html(
-    simple_form_render_html(
-      $ctx, $req,
-      title => 'pgp public key',
-      body  => $body,
-    )
+  return Iczelia::Handlers::Admin::render_admin(
+    $ctx, $req, 'admin_pgp.tpl',
+    title            => 'pgp public key',
+    has_key          => $size ? 1 : 0,
+    key_size         => $size,
+    key_uploaded_fmt => $size ? ts_fmt($mtime) : '',
+    csrf_upload      => $ctx->{auth}->csrf_token($sid, 'pgp'),
+    csrf_delete      => $ctx->{auth}->csrf_token($sid, 'pgp:delete'),
   );
 }
 
