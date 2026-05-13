@@ -11,8 +11,8 @@
 <link rel="alternate icon" href="/favicon.ico">
 <link rel="alternate" type="application/rss+xml"  title="iczelia RSS"  href="/index.xml">
 <link rel="alternate" type="application/atom+xml" title="iczelia Atom" href="/feed.xml">
-<link rel="preload" as="font" type="font/woff" href="/fonts/arial.woff" crossorigin>
-<link rel="preload" as="font" type="font/woff" href="/fonts/lmmono10-regular.woff" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/arial.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/lmmono10-regular.woff2" crossorigin>
 {% if chrome.theme_css %}<style>{{{ chrome.theme_css }}}</style>{% endif %}
 {% block head %}{% endblock %}
 </head>
