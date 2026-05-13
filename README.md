@@ -14,12 +14,15 @@ Distro packages (Debian-flavoured names):
 
 - `perl` >= 5.10
 - `libdbi-perl`, `libdbd-sqlite3-perl`
+- `libio-compress-brotli-perl` (brotli response encoding; gzip works
+  without it via core `Compress::Zlib`)
 - `nginx`
 - `texlive-latex-base`, `texlive-latex-recommended`,
   `texlive-fonts-recommended`, `texlive-latex-extra`
 - `dvisvgm`
 - `curl`
 - `cron` (for the activity fetcher)
+- optional: `zopfli`, `oxipng` (tighter gzip / PNG, used by the cache warmer)
 
 ## Layout
 

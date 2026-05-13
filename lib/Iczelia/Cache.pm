@@ -23,7 +23,8 @@ use Digest::SHA      qw(sha256_hex);
 use Encode           ();
 use File::Temp       ();
 use POSIX            ();
-use Iczelia::Minify  ();
+use Iczelia::Minify   ();
+use Iczelia::Compress ();
 use Iczelia::Process ();
 
 # Response cache for public GETs. The request path stores the body
@@ -421,39 +422,12 @@ sub _gzip {
       timeout => $self->{timeout_s});
     return $out if defined $out && length $out;
   }
-  return _gzip_pp($body);
+  return Iczelia::Compress::gzip($body);
 }
 
 sub _brotli {
   my ($self, $body) = @_;
-  return undef unless Iczelia::Process::have_bin('brotli');
-  return Iczelia::Process::run_capped(
-    ['brotli', '-q', $self->{brotli_q}, '-c'],
-    body    => $body,
-    timeout => $self->{timeout_s}
-  );
-}
-
-# Pure-Perl gzip via raw deflate, used when zopfli isn't installed.
-sub _gzip_pp {
-  my ($body) = @_;
-  require Compress::Zlib;
-  my $d = Compress::Zlib::deflateInit(
-    -Level      => Compress::Zlib::Z_BEST_COMPRESSION(),
-    -WindowBits => -Compress::Zlib::MAX_WBITS(),
-  ) or return undef;
-  my ($buf1, $s1) = $d->deflate($body);
-  return undef if $s1 != Compress::Zlib::Z_OK();
-  my ($buf2, $s2) = $d->flush;
-  return undef if $s2 != Compress::Zlib::Z_OK();
-  my $payload = $buf1 . $buf2;
-  my $crc     = Compress::Zlib::crc32($body);
-  my $isize   = length($body) % 2**32;
-
-  # gzip header: magic, deflate, no flags, mtime=0, xfl=0, OS=unknown.
-  my $hdr  = pack 'CCCCVCC', 0x1f, 0x8b, 8, 0, 0, 2, 255;
-  my $tail = pack 'VV', $crc, $isize;
-  return $hdr . $payload . $tail;
+  return Iczelia::Compress::brotli($body, $self->{brotli_q});
 }
 
 1;

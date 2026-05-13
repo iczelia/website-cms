@@ -27,6 +27,7 @@ RUN apt-get update && \
         perl \
         libdbi-perl \
         libdbd-sqlite3-perl \
+        libio-compress-brotli-perl \
         ca-certificates \
         curl \
         sqlite3 \
@@ -37,7 +38,6 @@ RUN apt-get update && \
         dvipng \
         dvisvgm \
         zopfli \
-        brotli \
         tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*

@@ -27,7 +27,8 @@ use Carp             qw(croak);
 
 use Iczelia::HTTP;
 use Iczelia::Router;
-use Iczelia::Minify ();
+use Iczelia::Minify   ();
+use Iczelia::Compress ();
 
 # Requests slower than this print a SLOW marker plus a timing
 # breakdown. Override via $ENV{ICZELIA_SLOW_REQ_S}.
@@ -330,6 +331,7 @@ sub _handle_one {
         $hit->{_keep_alive_timeout} = $opt{ka_timeout};
         $hit->{_keep_alive_max}     = $opt{ka_max};
       }
+      _compress_uncached($req, $hit);   # for rows the warmer hasn't reached
       Iczelia::HTTP::write_response($cli, $hit);
       _log_request(
         $req, $hit,
@@ -412,8 +414,7 @@ sub _handle_one {
     };
   }
 
-  # Pages that never enter the response cache skip put()'s minify pass.
-  # Run it here so they ship the same packed body.
+  # uncached pages skip put()'s minify pass; do it here
   if ( !$minified
     && ($resp->{status} || 200) == 200
     && $resp->{headers}
@@ -423,6 +424,8 @@ sub _handle_one {
   {
     $resp->{body} = Iczelia::Minify::html($resp->{body});
   }
+
+  _compress_uncached($req, $resp);
 
   my $keep_alive = _decide_keep_alive($req, \%opt);
   if ($keep_alive) {
@@ -454,6 +457,45 @@ sub _handle_one {
   }
 
   return $keep_alive ? 'keep' : 'close';
+}
+
+# On-the-wire compression for responses the cache hasn't pre-encoded;
+# fast brotli quality since this is per request, not the warmer.
+my $COMPRESS_CT_RE =
+  qr{^(?:text/|application/(?:json|javascript|xml|[\w.+-]+\+xml)\b)}i;
+my $COMPRESS_MIN = 256;
+
+sub _compress_uncached {
+  my ($req, $resp) = @_;
+  return if ($resp->{status} || 200) != 200;
+  my $h = $resp->{headers} or return;
+  return if exists $h->{'Content-Encoding'};
+  my $body = $resp->{body};
+  return unless defined $body && length $body;
+  return unless ($h->{'Content-Type'} // '') =~ $COMPRESS_CT_RE;
+
+  require Encode;
+  $body = Encode::encode('UTF-8', $body) if Encode::is_utf8($body);
+  return if length($body) < $COMPRESS_MIN;
+  $resp->{body} = $body;    # bytes now; write_response skips re-encoding
+
+  my $ae = lc($req->{headers}{'accept-encoding'} // '');
+  my ($enc, $z);
+  if ($ae =~ /\bbr\b/) {
+    $z = Iczelia::Compress::brotli($body, 5);
+    $enc = 'br' if defined $z;
+  }
+  if (!$enc && $ae =~ /\bgzip\b/) {
+    $z = Iczelia::Compress::gzip($body);
+    $enc = 'gzip' if defined $z;
+  }
+  return unless $enc;
+  $resp->{body}            = $z;
+  $h->{'Content-Encoding'} = $enc;
+  $h->{'Vary'} =
+    ($h->{'Vary'} && $h->{'Vary'} !~ /\bAccept-Encoding\b/i)
+    ? "$h->{'Vary'}, Accept-Encoding"
+    : ($h->{'Vary'} || 'Accept-Encoding');
 }
 
 # One STDERR line per served request; SLOW marker over $SLOW_REQ_S.
