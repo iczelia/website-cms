@@ -27,6 +27,7 @@ use Iczelia::Tex;
 use Iczelia::Cache;
 use Iczelia::Markup;
 use Iczelia::SafeMarkup;
+use Iczelia::Handlers::Admin::Cache qw(REBUILD_PHASE);
 
 # Snapshot key updated at the start of each pass and again after
 # rendering finishes; the admin dashboard reads it instead of walking.
@@ -86,7 +87,7 @@ sub _pass {
   my ($db, $tex) = $self->_connect;
 
   unless ($opt{force}) {
-    my $rebuild_phase = $db->setting('cache.rebuild.phase') // '';
+    my $rebuild_phase = $db->setting(REBUILD_PHASE) // '';
     if ($rebuild_phase =~ /^(?:starting|math|html|cancelling)$/) {
       $db->disconnect;
       return 0;

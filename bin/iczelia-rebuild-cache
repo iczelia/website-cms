@@ -33,6 +33,8 @@ use POSIX        ();
 use Iczelia::Config;
 use Iczelia::DB;
 use Iczelia::Handlers::Admin;
+use Iczelia::Handlers::Admin::Cache
+  qw(REBUILD_PHASE REBUILD_ERROR REBUILD_FINISHED_AT REBUILD_PID);
 
 my %opt = (config => '/etc/iczelia/iczelia.conf');
 GetOptions('config=s' => \$opt{config})
@@ -52,12 +54,12 @@ my $on_cancel = sub {
   $SIG{TERM} = 'IGNORE';
   eval {
     my $rdb     = Iczelia::DB->connect($cfg);
-    my $current = $rdb->setting('cache.rebuild.phase') // '';
+    my $current = $rdb->setting(REBUILD_PHASE) // '';
     if ($current =~ /^(?:starting|math|html|cancelling)$/) {
-      $rdb->set_setting('cache.rebuild.phase',       'cancelled');
-      $rdb->set_setting('cache.rebuild.finished_at', time());
+      $rdb->set_setting(REBUILD_PHASE,       'cancelled');
+      $rdb->set_setting(REBUILD_FINISHED_AT, time());
     }
-    $rdb->set_setting('cache.rebuild.pid', 0);
+    $rdb->set_setting(REBUILD_PID, 0);
     $rdb->disconnect;
   };
   POSIX::_exit(0);
@@ -68,7 +70,7 @@ $SIG{HUP}  = 'IGNORE';
 
 eval {
   my $sdb = Iczelia::DB->connect($cfg);
-  $sdb->set_setting('cache.rebuild.pid', $$);
+  $sdb->set_setting(REBUILD_PID, $$);
   $sdb->disconnect;
 };
 
@@ -77,10 +79,10 @@ if ($@) {
   my $err = "$@";
   eval {
     my $rdb = Iczelia::DB->connect($cfg);
-    $rdb->set_setting('cache.rebuild.phase',       'error');
-    $rdb->set_setting('cache.rebuild.error',       substr($err, 0, 200));
-    $rdb->set_setting('cache.rebuild.finished_at', time());
-    $rdb->set_setting('cache.rebuild.pid',         0);
+    $rdb->set_setting(REBUILD_PHASE,       'error');
+    $rdb->set_setting(REBUILD_ERROR,       substr($err, 0, 200));
+    $rdb->set_setting(REBUILD_FINISHED_AT, time());
+    $rdb->set_setting(REBUILD_PID,         0);
     $rdb->disconnect;
   };
 }

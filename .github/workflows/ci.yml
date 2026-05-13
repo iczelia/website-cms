@@ -50,10 +50,10 @@ jobs:
       - name: build the dev database
         run: |
           mkdir -p var/tmp var/media
-          bin/iczelia-init --force
+          perl -Ilib bin/iczelia-init --force
 
       - name: iczelia-server --check
-        run: bin/iczelia-server --check
+        run: perl -Ilib bin/iczelia-server --check
 
       - name: prove t/
         run: prove -l --jobs 4 t/

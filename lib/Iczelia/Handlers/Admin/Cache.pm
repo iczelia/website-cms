@@ -22,8 +22,22 @@ use File::Spec    ();
 use JSON::PP      ();
 use Iczelia::HTTP ();
 
-use constant REBUILD_KEYS =>
-  qw(phase scope total done started_at finished_at error pid);
+use Exporter qw(import);
+our @EXPORT_OK = qw(
+  REBUILD_PHASE REBUILD_SCOPE REBUILD_TOTAL REBUILD_DONE
+  REBUILD_STARTED_AT REBUILD_FINISHED_AT REBUILD_ERROR REBUILD_PID
+);
+
+use constant {
+  REBUILD_PHASE       => 'cache.rebuild.phase',
+  REBUILD_SCOPE       => 'cache.rebuild.scope',
+  REBUILD_TOTAL       => 'cache.rebuild.total',
+  REBUILD_DONE        => 'cache.rebuild.done',
+  REBUILD_STARTED_AT  => 'cache.rebuild.started_at',
+  REBUILD_FINISHED_AT => 'cache.rebuild.finished_at',
+  REBUILD_ERROR       => 'cache.rebuild.error',
+  REBUILD_PID         => 'cache.rebuild.pid',
+};
 
 sub register {
   my ($class, $router, $ctx) = @_;
@@ -77,30 +91,30 @@ sub _cache_rebuild {
     return Iczelia::HTTP::redirect('/admin/?rebuilding=1');
   }
 
-  $db->set_setting('cache.rebuild.phase',       'starting');
-  $db->set_setting('cache.rebuild.scope',       $scope);
-  $db->set_setting('cache.rebuild.total',       0);
-  $db->set_setting('cache.rebuild.done',        0);
-  $db->set_setting('cache.rebuild.started_at',  time());
-  $db->set_setting('cache.rebuild.finished_at', 0);
-  $db->set_setting('cache.rebuild.error',       '');
-  $db->set_setting('cache.rebuild.pid',         0);
+  $db->set_setting(REBUILD_PHASE,       'starting');
+  $db->set_setting(REBUILD_SCOPE,       $scope);
+  $db->set_setting(REBUILD_TOTAL,       0);
+  $db->set_setting(REBUILD_DONE,        0);
+  $db->set_setting(REBUILD_STARTED_AT,  time());
+  $db->set_setting(REBUILD_FINISHED_AT, 0);
+  $db->set_setting(REBUILD_ERROR,       '');
+  $db->set_setting(REBUILD_PID,         0);
 
   my $cfg         = $ctx->{cfg};
   my $config_path = $cfg->{_config_path};
   if (!$config_path || !-r $config_path) {
-    $db->set_setting('cache.rebuild.phase', 'error');
-    $db->set_setting('cache.rebuild.error',
+    $db->set_setting(REBUILD_PHASE, 'error');
+    $db->set_setting(REBUILD_ERROR,
       'rebuild requires --config; daemon was started without one');
-    $db->set_setting('cache.rebuild.finished_at', time());
+    $db->set_setting(REBUILD_FINISHED_AT, time());
     return Iczelia::HTTP::redirect('/admin/');
   }
 
   my $rebuild_bin = _rebuild_bin_path();
   if (!-x $rebuild_bin) {
-    $db->set_setting('cache.rebuild.phase', 'error');
-    $db->set_setting('cache.rebuild.error', "missing helper: $rebuild_bin");
-    $db->set_setting('cache.rebuild.finished_at', time());
+    $db->set_setting(REBUILD_PHASE, 'error');
+    $db->set_setting(REBUILD_ERROR, "missing helper: $rebuild_bin");
+    $db->set_setting(REBUILD_FINISHED_AT, time());
     return Iczelia::HTTP::redirect('/admin/');
   }
 
@@ -149,24 +163,29 @@ sub _cache_rebuild_cancel {
   }
   else {
     kill 'TERM', -$pid;
-    $db->set_setting('cache.rebuild.phase', 'cancelling');
+    $db->set_setting(REBUILD_PHASE, 'cancelling');
   }
   return Iczelia::HTTP::redirect('/admin/');
 }
 
 sub _force_clear_rebuild {
   my ($db) = @_;
-  $db->set_setting('cache.rebuild.phase',       'cancelled');
-  $db->set_setting('cache.rebuild.finished_at', time());
-  $db->set_setting('cache.rebuild.pid',         0);
+  $db->set_setting(REBUILD_PHASE,       'cancelled');
+  $db->set_setting(REBUILD_FINISHED_AT, time());
+  $db->set_setting(REBUILD_PID,         0);
 }
 
 sub _rebuild_state {
   my ($db) = @_;
   my %s;
-  for my $k (REBUILD_KEYS) {
-    $s{$k} = $db->setting("cache.rebuild.$k");
-  }
+  $s{phase}       = $db->setting(REBUILD_PHASE);
+  $s{scope}       = $db->setting(REBUILD_SCOPE);
+  $s{total}       = $db->setting(REBUILD_TOTAL);
+  $s{done}        = $db->setting(REBUILD_DONE);
+  $s{started_at}  = $db->setting(REBUILD_STARTED_AT);
+  $s{finished_at} = $db->setting(REBUILD_FINISHED_AT);
+  $s{error}       = $db->setting(REBUILD_ERROR);
+  $s{pid}         = $db->setting(REBUILD_PID);
   $s{$_} = ($s{$_} || 0) + 0 for qw(total done started_at finished_at pid);
   $s{phase} //= 'idle';
   $s{scope} //= 'all';
@@ -197,7 +216,7 @@ sub _run_rebuild {
   require Iczelia::Warmer;
 
   my $db    = Iczelia::DB->connect($cfg);
-  my $scope = $db->setting('cache.rebuild.scope') // 'all';
+  my $scope = $db->setting(REBUILD_SCOPE) // 'all';
 
   $db->do_('DELETE FROM response_cache');
   $db->do_('DELETE FROM tex_cache') if $scope eq 'all';
@@ -207,14 +226,14 @@ sub _run_rebuild {
     if $scope eq 'all';
 
   if ($scope eq 'all') {
-    $db->set_setting('cache.rebuild.phase', 'math');
-    $db->set_setting('cache.rebuild.total', 0);
-    $db->set_setting('cache.rebuild.done',  0);
+    $db->set_setting(REBUILD_PHASE, 'math');
+    $db->set_setting(REBUILD_TOTAL, 0);
+    $db->set_setting(REBUILD_DONE,  0);
     $db->disconnect;
     eval {
       Iczelia::Warmer->new(cfg => $cfg)->warmup(
-        progress_key => 'cache.rebuild.done',
-        total_key    => 'cache.rebuild.total',
+        progress_key => REBUILD_DONE,
+        total_key    => REBUILD_TOTAL,
       );
     };
     $db = Iczelia::DB->connect($cfg);
@@ -229,9 +248,9 @@ sub _run_rebuild {
   push @tasks, map {['post', $_->{kind}, $_->{slug}]} @$posts;
   my $total = scalar @tasks;
 
-  $db->set_setting('cache.rebuild.phase', 'html');
-  $db->set_setting('cache.rebuild.total', $total);
-  $db->set_setting('cache.rebuild.done',  0);
+  $db->set_setting(REBUILD_PHASE, 'html');
+  $db->set_setting(REBUILD_TOTAL, $total);
+  $db->set_setting(REBUILD_DONE,  0);
   $db->disconnect;
 
   if ($total) {
@@ -272,7 +291,7 @@ sub _run_rebuild {
           };
           $cdb->do_(
             'UPDATE settings SET value = CAST(value AS INTEGER) + 1
-                 WHERE key = ?', 'cache.rebuild.done'
+                 WHERE key = ?', REBUILD_DONE
           );
         }
         $cdb->disconnect;
@@ -284,9 +303,9 @@ sub _run_rebuild {
   }
 
   $db = Iczelia::DB->connect($cfg);
-  $db->set_setting('cache.rebuild.phase',       'done');
-  $db->set_setting('cache.rebuild.finished_at', time());
-  $db->set_setting('cache.rebuild.pid',         0);
+  $db->set_setting(REBUILD_PHASE,       'done');
+  $db->set_setting(REBUILD_FINISHED_AT, time());
+  $db->set_setting(REBUILD_PID,         0);
   $db->disconnect;
 }
 
