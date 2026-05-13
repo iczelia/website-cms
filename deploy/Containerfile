@@ -17,17 +17,20 @@
 # Containerfile for the iczelia.net daemon. Build context: repo root.
 #   cd /path/to/iczelia
 #   podman build -t iczelia:latest -f deploy/Containerfile .
-# Image bundles TeX Live + Perl + DBI/SQLite + curl. State at /var/lib/iczelia.
+# Image bundles TeX Live + Perl + the cpanfile deps. State at /var/lib/iczelia.
 
 FROM docker.io/library/debian:bookworm-slim AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime packages, then the cpanfile deps (DBI, DBD::SQLite,
+# IO::Compress::Brotli are XS; from CPAN since IO::Compress::Brotli isn't
+# in Debian). The build toolchain is installed and purged in this layer.
+COPY cpanfile /tmp/cpanfile
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         perl \
-        libdbi-perl \
-        libdbd-sqlite3-perl \
-        libio-compress-brotli-perl \
+        libbrotli1 \
         ca-certificates \
         curl \
         sqlite3 \
@@ -39,8 +42,12 @@ RUN apt-get update && \
         dvisvgm \
         zopfli \
         tini \
+    && apt-get install -y --no-install-recommends \
+        cpanminus build-essential libperl-dev libbrotli-dev \
+    && (cd /tmp && cpanm --notest --installdeps .) \
+    && apt-get purge -y --auto-remove cpanminus build-essential libperl-dev libbrotli-dev \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cpanm /tmp/cpanfile
 
 # oxipng isn't in Debian bookworm; pull the matching static-musl binary
 # from upstream. Build keeps going on download failure so offline rebuilds

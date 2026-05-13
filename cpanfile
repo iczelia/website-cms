@@ -14,28 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-PERL ?= perl
-PROVE ?= prove
-CPANM ?= cpanm
+# The only non-core deps. Install with `cpanm --installdeps .`.
 
-.PHONY: deps test test-quick test-tex check run clean
-
-deps:
-	@$(CPANM) --installdeps .
-
-check:
-	@$(PERL) -Ilib -c bin/iczelia-server
-	@bin/iczelia-server --check
-
-test:
-	@$(PROVE) -l --jobs 4 t/
-
-test-quick:
-	@$(PROVE) -l --jobs 4 -e '$(PERL) -Ilib' t/0*.t t/1*.t
-
-run:
-	@bin/iczelia-server --listen 127.0.0.1:8731
-
-clean:
-	@find . -name '*.tmp.*' -delete
-	@rm -rf var/site.db var/tmp/*
+requires 'DBI';
+requires 'DBD::SQLite', '1.70';   # bundled SQLite, needs FTS5
+requires 'IO::Compress::Brotli';

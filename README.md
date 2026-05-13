@@ -10,12 +10,15 @@ Licensed under the GNU AGPL v3 or later. See [LICENSE.md](./LICENSE.md).
 
 ## Requirements
 
+Perl modules: see `cpanfile` (DBI, DBD::SQLite, IO::Compress::Brotli;
+everything else the daemon uses is core). Install with `cpanm
+--installdeps .` (or `make deps`); the container build does this.
+
 Distro packages (Debian-flavoured names):
 
-- `perl` >= 5.10
-- `libdbi-perl`, `libdbd-sqlite3-perl`
-- `libio-compress-brotli-perl` (brotli response encoding; gzip works
-  without it via core `Compress::Zlib`)
+- `perl` >= 5.10, plus a C toolchain to build the cpanfile deps
+  (`build-essential`, `libperl-dev`, `libbrotli-dev`, `cpanminus`)
+- `libbrotli1` (runtime for `IO::Compress::Brotli`)
 - `nginx`
 - `texlive-latex-base`, `texlive-latex-recommended`,
   `texlive-fonts-recommended`, `texlive-latex-extra`

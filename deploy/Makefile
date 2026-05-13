@@ -25,10 +25,13 @@ USER       ?= iczelia
 
 REPO := $(shell cd .. && pwd)
 
-.PHONY: install user dirs files conf nginx systemd cron db perms \
+.PHONY: install deps user dirs files conf nginx systemd cron db perms \
         podman-build podman-run podman-quadlet podman-stop
 
-install: user dirs files conf nginx systemd cron db perms
+deps:
+	sudo cpanm --installdeps $(REPO)
+
+install: deps user dirs files conf nginx systemd cron db perms
 	@echo
 	@echo "==> Done. Next steps:"
 	@echo "    1) sudo systemctl daemon-reload && sudo systemctl enable --now iczelia"
