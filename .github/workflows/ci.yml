@@ -24,21 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: system deps (apt cache)
+      - name: build deps (apt cache)
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: >-
-            build-essential libperl-dev libcrypt-dev libbrotli-dev
-            texlive-latex-base texlive-latex-recommended
-            texlive-fonts-recommended texlive-latex-extra
-            dvisvgm dvipng brotli curl
-          version: 2
+          packages: build-essential libperl-dev libcrypt-dev libbrotli-dev
+          version: 1
 
-      - name: rebuild TeX format files
+      - name: TeX toolchain + curl/brotli (no cache, breaks postinst)
         run: |
-          sudo update-fmtutil || true
-          sudo fmtutil-sys --all || true
-          sudo mktexlsr || true
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended \
+            texlive-fonts-recommended texlive-latex-extra \
+            dvisvgm dvipng brotli curl
 
       - name: set up perl ${{ matrix.perl }}
         uses: shogo82148/actions-setup-perl@v1
