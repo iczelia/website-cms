@@ -189,7 +189,7 @@ sub _serve_image_pick {
   my ($root, $rel, $req) = @_;
   if ($rel =~ /\.[a-z0-9]+$/i) {
     my $r = _serve_safe($root, $rel);
-    _stamp_vary_accept($r);
+    _stamp_image_pack_headers($r);
     return $r;
   }
   my $accept = ($req->{headers}{accept} // '');
@@ -200,19 +200,25 @@ sub _serve_image_pick {
   for my $cand (@tries) {
     my $r = _serve_safe($root, $cand);
     if (($r->{status} // 0) == 200) {
-      _stamp_vary_accept($r);
+      _stamp_image_pack_headers($r);
       return $r;
     }
   }
   return Iczelia::HTTP::error(404);
 }
 
-sub _stamp_vary_accept {
+# Image-pack responses bypass the daemon's response_cache (so its
+# Vary: Accept-Encoding stamp doesn't clobber the per-Accept split
+# nginx needs). That bypass also dropped the Cache-Control the cache
+# layer used to apply, so we stamp it here.
+sub _stamp_image_pack_headers {
   my ($r) = @_;
   return unless $r && ref $r eq 'HASH';
   $r->{headers} ||= {};
   my $v = $r->{headers}{Vary};
   $r->{headers}{Vary} = defined $v && length $v ? "$v, Accept" : 'Accept';
+  $r->{headers}{'Cache-Control'} //=
+    'public, max-age=31536000, immutable';
 }
 
 # Serve $root/$rel only if it resolves (after symlinks) to something
