@@ -271,7 +271,7 @@ sub _admin_list {
 sub _admin_approve {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = _csrf_check($ctx, $req, "gb:approve:$id");
+  my $err = $ctx->{auth}->require_csrf($req, "gb:approve:$id");
   return $err if $err;
   my $row =
     $ctx->{db}->row('SELECT body_md FROM guestbook_entries WHERE id=?', $id);
@@ -292,7 +292,7 @@ sub _admin_approve {
 sub _admin_reject {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = _csrf_check($ctx, $req, "gb:reject:$id");
+  my $err = $ctx->{auth}->require_csrf($req, "gb:reject:$id");
   return $err if $err;
   $ctx->{db}->do_(
     q{
@@ -306,7 +306,7 @@ sub _admin_reject {
 sub _admin_reply {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = _csrf_check($ctx, $req, "gb:reply:$id");
+  my $err = $ctx->{auth}->require_csrf($req, "gb:reply:$id");
   return $err if $err;
   my $body = $req->{params}{reply} // '';
   my ($ok, $why) = Iczelia::SafeMarkup::validate($body, {max => 4000});
@@ -327,18 +327,11 @@ sub _admin_reply {
 sub _admin_delete {
   my ($ctx, $req) = @_;
   my $id  = $req->{caps}{id} + 0;
-  my $err = _csrf_check($ctx, $req, "gb:delete:$id");
+  my $err = $ctx->{auth}->require_csrf($req, "gb:delete:$id");
   return $err if $err;
   $ctx->{db}->do_('DELETE FROM guestbook_entries WHERE id=?', $id);
   $ctx->{render}->invalidate_page('guestbook');
   return Iczelia::HTTP::redirect('/admin/guestbook/');
-}
-
-sub _csrf_check {
-  my ($ctx, $req, $form) = @_;
-  my $tok = $req->{params}{csrf} // '';
-  return undef if $ctx->{auth}->verify_csrf($req->{auth_sid}, $form, $tok);
-  return Iczelia::HTTP::error(400, 'csrf');
 }
 
 1;

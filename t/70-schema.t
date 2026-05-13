@@ -17,12 +17,23 @@
 use strict;
 use warnings;
 use Test::More;
-use FindBin ();
+use File::Temp ();
+use FindBin    ();
 use lib "$FindBin::Bin/../lib";
 
 use Iczelia::Schema;
 
 my $s = Iczelia::Schema->new(dir => "$FindBin::Bin/../share/templates/pages");
+
+my $tmp = File::Temp->newdir;
+open my $tfh, '>', "$tmp/inttest.json" or die "open: $!";
+print $tfh <<'JSON';
+{ "title": "Int test", "fields": [
+  { "name": "n", "kind": "int", "min": 1, "max": 3, "default": 1 }
+] }
+JSON
+close $tfh;
+my $intsch = Iczelia::Schema->new(dir => "$tmp");
 
 # 1: load
 my $sch = $s->load('about');
@@ -71,27 +82,12 @@ is_deeply(
 is(scalar @{$d->{vitals}}, 1, 'empty rows pruned');
 
 # 5: int coerced
-my $hsch = $s->load('home');
-($d, $errs) = $s->parse_form(
-  'home',
-  {
-    profile           => 'p',
-    currently         => 'c',
-    blog_teaser_count => '2',
-  }
-);
-is($d->{blog_teaser_count}, 2, 'int parsed');
+($d, $errs) = $intsch->parse_form('inttest', {n => '2'});
+is($d->{n}, 2, 'int parsed');
 
 # 6: int min/max enforced
-($d, $errs) = $s->parse_form(
-  'home',
-  {
-    profile           => 'p',
-    currently         => 'c',
-    blog_teaser_count => '99',
-  }
-);
-is($d->{blog_teaser_count}, 3, 'int clamped to max');
+($d, $errs) = $intsch->parse_form('inttest', {n => '99'});
+is($d->{n}, 3, 'int clamped to max');
 
 # 7: encode + decode roundtrip
 my $json = $s->encode({a => 1, b => [{c => 'd'}]});

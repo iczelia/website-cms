@@ -33,7 +33,6 @@ sub new {
   croak "db required" unless $arg{db};
   return bless {
     db       => $arg{db},
-    tmp_dir  => $arg{tmp_dir}  // '/tmp',
     brotli_q => $arg{brotli_q} // 11,
     zopfli_i => $arg{zopfli_i} // 15,
 
@@ -46,10 +45,10 @@ sub new {
 my %PUBLISH_BUST_PATHS =
   map {$_ => 1} qw(/ /blog/ /journal/ /feed.xml /index.xml /rss.xml);
 
-# Per-path Cache-Control. Vendored JS, fonts, and asset packs are
-# immutable; cms.css/cms.js change with deploys; uploaded media and
-# favicon are stable enough for a day; PGP gets 10 minutes; everything
-# else gets a conservative 60s for dynamic HTML.
+# Static assets (CSS, JS, images, fonts) get aggressive caching;
+# every other path is HTML / feed content that may change on any
+# admin edit, so we serve no-store and rely on the daemon's own
+# response_cache for repeat hits.
 sub _cache_control_for {
   my ($path) = @_;
   return 'public, max-age=31536000, immutable'
@@ -57,9 +56,9 @@ sub _cache_control_for {
   return 'public, max-age=86400'
     if $path =~ m{^/(?:media/|favicon\.ico\z)};
   return 'public, max-age=3600'
-    if $path =~ m{^/(?:cms\.(?:css|js)|style\.|about\.compat\.css)};
+    if $path =~ m{^/(?:cms\.(?:css|js)|style\.|about\.compat\.css|common\.compat\.css)};
   return 'public, max-age=600' if $path eq '/pub.pgp';
-  return 'public, max-age=60';
+  return 'no-store';
 }
 
 # Rows whose content-type is already-compressed media (image, font,

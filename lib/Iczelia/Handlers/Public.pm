@@ -53,7 +53,10 @@ sub register {
 sub _home {
   my ($ctx, $req) = @_;
   my $html = $ctx->{render}->render_home;
-  return Iczelia::HTTP::html($html);
+  my $resp = Iczelia::HTTP::html($html,
+    headers => {'Cache-Control' => 'no-store'});
+  $resp->{_no_cache} = 1;
+  return $resp;
 }
 
 sub _page {

@@ -73,7 +73,11 @@ sub render_home {
   my $data = _decode_data($page->{data});
 
   my $profile_html = $self->_md($data->{profile} // '', inline => 1);
-  my $currently    = $data->{currently} // '';
+  my $cur_row      = $self->{db}->row(
+    q{SELECT text FROM activity WHERE source='currently'
+                 ORDER BY position LIMIT 1}
+  );
+  my $currently = ($cur_row && defined $cur_row->{text}) ? $cur_row->{text} : '';
 
   # Three latest updates. mid/extra flags drive the chrome's responsive
   # separators (middle >= 800px, third >= 1024px).
@@ -209,7 +213,8 @@ sub _home_css {
       );
       for my $k (keys %map) {
         my $path = "$dir/$map{$k}";
-        open my $fh, '<:raw', $path or do {$out{$k} = ''; next};
+        open my $fh, '<:encoding(UTF-8)', $path
+          or do {$out{$k} = ''; next};
         local $/;
         my $css = <$fh>;
         close $fh;
@@ -1086,10 +1091,11 @@ sub _cook_page_data {
   my ($self, $template, $data) = @_;
   my %out = %$data;
 
-  # Block-level markdown fields: <name> -> <name>_html.
+  # Block-level markdown fields: <name> -> <name>_html. Names must match
+  # the kind:"markdown" fields declared in share/templates/pages/*.json.
   for my $f (
     qw(
-    intro what_i_do currently colophon body
+    intro body
     reach_out employment talks links hardware setup patreon misc qr
     experience education works
     )

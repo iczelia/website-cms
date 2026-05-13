@@ -58,11 +58,13 @@ my $J = JSON::PP->new->canonical;
 $db->do_(
   q{UPDATE pages SET data=?, rendered_html=NULL WHERE slug='home'},
   $J->encode(
-    {
-      profile   => "21, mathematician, **scientist**, programmer.",
-      currently => "writing about monads",
-    }
+    {profile => "21, mathematician, **scientist**, programmer."}
   )
+);
+$db->do_(
+  q{INSERT INTO activity(source, text, position, fetched_at)
+       VALUES('currently', ?, 0, strftime('%s','now'))},
+  'writing about monads'
 );
 $db->do_(
   q{INSERT INTO updates(date, body, position) VALUES(?,?,?)}, '2026-04-21',
@@ -100,5 +102,30 @@ like($post, qr{<title>iczelia :: hello world</title>}, 'post title');
 # 6: 404 paths.
 is($r->render_page('does-not-exist'), undef, 'unknown page slug => undef');
 is($r->render_post('blog', 'none'),   undef, 'unknown post slug => undef');
+
+# 7: Regression - every home-page write path must reach the renderer.
+# Each "currently is somewhere else than the renderer reads from" bug
+# class manifests as: admin save persists, but render_home doesn't see
+# the new value. Sentinel-string each write path so a future split
+# fails loudly.
+use Iczelia::Content;
+my $content = Iczelia::Content->new(db => $db, render => $r);
+
+$content->set_currently('SENTINEL_CURRENTLY_FROM_ACTIVITY');
+my $home_cur = $r->render_home;
+like($home_cur, qr{SENTINEL_CURRENTLY_FROM_ACTIVITY},
+  q{/admin/activity/currently -> activity table -> home renders 'currently'});
+
+$content->save_page('home', 'iczelia :: personal site v2.0',
+  'home', $J->encode({profile => 'SENTINEL_PROFILE_FROM_HOMEEDIT'}));
+my $home_prof = $r->render_home;
+like($home_prof, qr{SENTINEL_PROFILE_FROM_HOMEEDIT},
+  q{/admin/edit/home -> pages.data.profile -> home renders 'profile'});
+
+$content->replace_updates(
+  [{date => '2026-06-15', body => 'SENTINEL_UPDATE_BODY'}]);
+my $home_upd = $r->render_home;
+like($home_upd, qr{SENTINEL_UPDATE_BODY},
+  q{/admin/updates/ -> updates table -> home renders update body});
 
 done_testing;
