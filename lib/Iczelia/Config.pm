@@ -65,6 +65,7 @@ sub load {
 
   if ($opt->{config} && -r $opt->{config}) {
     _read_file($self, $opt->{config});
+    $self->{_config_path} = File::Spec->rel2abs($opt->{config});
   }
 
   $self->{'listen-tcp'}    = $opt->{listen}  if defined $opt->{listen};

@@ -486,7 +486,7 @@ sub _compress_uncached {
     $enc = 'br' if defined $z;
   }
   if (!$enc && $ae =~ /\bgzip\b/) {
-    $z = Iczelia::Compress::gzip($body);
+    $z = Iczelia::Compress::gzip_fast($body);
     $enc = 'gzip' if defined $z;
   }
   return unless $enc;

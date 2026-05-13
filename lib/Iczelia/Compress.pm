@@ -18,18 +18,15 @@ package Iczelia::Compress;
 use strict;
 use warnings;
 
-# In-process gzip + brotli; oxipng stays a CLI in Cache.pm.
+use IO::Compress::Brotli ();
+use Gzip::Zopfli         qw(zopfli_compress);
+use Compress::Zlib       ();
 
-my $HAVE_BROTLI;
-sub have_brotli {
-  $HAVE_BROTLI //= (eval {require IO::Compress::Brotli; 1} ? 1 : 0);
-  return $HAVE_BROTLI;
-}
+# In-process gzip (Gzip::Zopfli) and brotli (IO::Compress::Brotli).
 
 sub brotli {
   my ($body, $quality) = @_;
   return undef unless defined $body && length $body;
-  return undef unless have_brotli();
   my $out = eval {
     defined $quality
       ? IO::Compress::Brotli::bro($body, $quality)
@@ -38,10 +35,20 @@ sub brotli {
   return (defined $out && length $out) ? $out : undef;
 }
 
+# Batch-quality zopfli gzip. Pay the cost once per cached row in the
+# warmer; serve from the response cache after that. For per-request
+# compression on cache misses use gzip_fast.
 sub gzip {
+  my ($body, %opt) = @_;
+  return undef unless defined $body && length $body;
+  my $iter = $opt{iterations} || 15;
+  my $out  = eval {zopfli_compress($body, numiterations => $iter)};
+  return (defined $out && length $out) ? $out : undef;
+}
+
+sub gzip_fast {
   my ($body) = @_;
-  return undef unless defined $body;
-  require Compress::Zlib;
+  return undef unless defined $body && length $body;
   my $d = Compress::Zlib::deflateInit(
     -Level      => Compress::Zlib::Z_BEST_COMPRESSION(),
     -WindowBits => -Compress::Zlib::MAX_WBITS(),

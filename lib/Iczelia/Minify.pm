@@ -22,7 +22,7 @@ use Exporter qw(import);
 our @EXPORT_OK = qw(css html);
 
 # Minify CSS / HTML for the response cache. Run once on cold cache (right
-# before brotli + zopfli) so live requests serve the byte-tightest possible
+# before brotli + gzip) so live requests serve the byte-tightest possible
 # representation. The savings on raw bytes are modest but they stack
 # multiplicatively with compression: minified+brotli is typically 25-35%
 # smaller than raw+brotli.

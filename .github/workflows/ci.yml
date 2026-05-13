@@ -48,15 +48,19 @@ jobs:
         uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: ${{ matrix.perl }}
-      - name: install cpan deps
-        run: cpanm --notest --quiet DBI DBD::SQLite
-      - name: install the TeX toolchain (math rendering tests)
+      - name: install build prerequisites for cpan deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            build-essential libcrypt-dev libbrotli-dev cmake
+      - name: install cpan deps
+        run: cpanm --notest --quiet DBI DBD::SQLite IO::Compress::Brotli Gzip::Zopfli
+      - name: install the TeX toolchain (math rendering tests)
+        run: |
+          sudo apt-get install -y --no-install-recommends \
             texlive-latex-base texlive-latex-recommended \
             texlive-fonts-recommended texlive-latex-extra \
-            dvisvgm dvipng zopfli brotli curl
+            dvisvgm dvipng brotli curl
       - name: prove t/
         run: prove -l --jobs 4 t/
 

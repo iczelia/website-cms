@@ -17,6 +17,8 @@
 package Iczelia::Handlers::Admin;
 use strict;
 use warnings;
+use FindBin            ();
+use File::Spec         ();
 use Iczelia::HTTP      ();
 use Iczelia::Util      qw(escape_html escape_attr slugify);
 use Iczelia::Schema    ();
@@ -105,6 +107,12 @@ sub register {
   $router->post('/admin/pgp/delete', sub {_gate(\&_pgp_delete, $ctx, $_[0])});
 
   $router->post('/admin/cache/drop', sub {_gate(\&_cache_drop, $ctx, $_[0])});
+  $router->post('/admin/cache/rebuild',
+    sub {_gate(\&_cache_rebuild, $ctx, $_[0])});
+  $router->post('/admin/cache/rebuild/cancel',
+    sub {_gate(\&_cache_rebuild_cancel, $ctx, $_[0])});
+  $router->get('/admin/cache/rebuild/status',
+    sub {_gate(\&_cache_rebuild_status, $ctx, $_[0])});
   $router->post('/admin/search/rebuild',
     sub {_gate(\&_search_rebuild, $ctx, $_[0])});
 
@@ -155,10 +163,13 @@ sub _admin_vars {
   my $csrf_extra = delete $extra{csrf_extra} || {};
 
   my $csrf_hash = {
-    logout     => $ctx->{auth}->csrf_token($sid, 'logout'),
-    upload     => $ctx->{auth}->csrf_token($sid, 'upload'),
-    preview    => $ctx->{auth}->csrf_token($sid, 'preview'),
-    cache_drop => $ctx->{auth}->csrf_token($sid, 'cache:drop'),
+    logout               => $ctx->{auth}->csrf_token($sid, 'logout'),
+    upload               => $ctx->{auth}->csrf_token($sid, 'upload'),
+    preview              => $ctx->{auth}->csrf_token($sid, 'preview'),
+    cache_drop           => $ctx->{auth}->csrf_token($sid, 'cache:drop'),
+    cache_rebuild        => $ctx->{auth}->csrf_token($sid, 'cache:rebuild'),
+    cache_rebuild_cancel =>
+      $ctx->{auth}->csrf_token($sid, 'cache:rebuild-cancel'),
     %$csrf_extra,
   };
   return {
@@ -306,13 +317,41 @@ sub _dashboard {
     ? int($math->{cached} * 100 / $math->{total})
     : 100;
 
+  my $rebuild = _rebuild_state($db);
+  if ($rebuild->{phase} =~ /^(?:math|html|cancelling)$/
+    && $rebuild->{pid} > 0
+    && !kill(0, $rebuild->{pid}))
+  {
+    _force_clear_rebuild($db);
+    $rebuild = _rebuild_state($db);
+    $rebuild->{error} = 'rebuild process exited without updating state';
+  }
+  if ($rebuild->{phase} eq 'idle') {
+    $rebuild = undef;
+  }
+  elsif ($rebuild->{phase} =~ /^(?:done|error|cancelled)$/
+    && $rebuild->{finished_at}
+    && time() - $rebuild->{finished_at} > 30)
+  {
+    $rebuild = undef;
+  }
+
   my $msg = $req->{qparams}{msg} // '';
   my $flash;
-  if ($msg eq 'cache-dropped') {
+  if ($req->{qparams}{rebuilding}) {
+    $flash = {
+      kind => 'ok',
+      text => 'cache rebuild started in the background.'
+    };
+  }
+  elsif ($msg eq 'cache-dropped') {
     $flash = {
       kind => 'ok',
       text => 'cache dropped - next visit pays a full re-render.'
     };
+  }
+  elsif ($msg eq 'cache-rebuilt') {
+    $flash = {kind => 'ok', text => 'cache rebuild complete.'};
   }
   elsif ($msg eq 'search-rebuilt') {
     $flash = {kind => 'ok', text => 'search index rebuilt.'};
@@ -336,10 +375,9 @@ sub _dashboard {
         blog       => $blog,
         journal    => $journal,
         math       => $math,
+        rebuild    => $rebuild,
         flash      => $flash,
         csrf_extra => {
-          cache_drop =>
-            $ctx->{auth}->csrf_token($req->{auth_sid}, 'cache:drop'),
           search_rebuild =>
             $ctx->{auth}->csrf_token($req->{auth_sid}, 'search:rebuild'),
         },
@@ -901,9 +939,245 @@ sub _cache_drop {
       $d->do_('DELETE FROM tex_cache');
       $d->do_('UPDATE pages SET rendered_html = NULL');
       $d->do_('UPDATE posts SET rendered_html = NULL');
+      $d->do_('DELETE FROM settings WHERE key=?', 'math.cache_stats');
     }
   );
   return Iczelia::HTTP::redirect('/admin/?msg=cache-dropped');
+}
+
+use constant REBUILD_KEYS =>
+  qw(phase scope total done started_at finished_at error pid);
+
+# Kicks off bin/iczelia-rebuild-cache via fork+exec. Inline fork would
+# inherit the request worker's open DBD::SQLite handle and abort the
+# child on the first sqlite3_open (libsqlite is not fork-safe); exec
+# wipes the inherited state.
+sub _cache_rebuild {
+  my ($ctx, $req) = @_;
+  my $err = _csrf_or_400($ctx, $req, 'cache:rebuild');
+  return $err if $err;
+  require POSIX;
+
+  my $scope = ($req->{params}{scope} // '') eq 'html' ? 'html' : 'all';
+
+  my $db   = $ctx->{db};
+  my $busy = _rebuild_state($db);
+  if ($busy->{phase} =~ /^(?:starting|math|html|cancelling)$/) {
+    return Iczelia::HTTP::redirect('/admin/?rebuilding=1');
+  }
+
+  $db->set_setting('cache.rebuild.phase',       'starting');
+  $db->set_setting('cache.rebuild.scope',       $scope);
+  $db->set_setting('cache.rebuild.total',       0);
+  $db->set_setting('cache.rebuild.done',        0);
+  $db->set_setting('cache.rebuild.started_at',  time());
+  $db->set_setting('cache.rebuild.finished_at', 0);
+  $db->set_setting('cache.rebuild.error',       '');
+  $db->set_setting('cache.rebuild.pid',         0);
+
+  my $cfg         = $ctx->{cfg};
+  my $config_path = $cfg->{_config_path};
+  if (!$config_path || !-r $config_path) {
+    $db->set_setting('cache.rebuild.phase', 'error');
+    $db->set_setting('cache.rebuild.error',
+      'rebuild requires --config; daemon was started without one');
+    $db->set_setting('cache.rebuild.finished_at', time());
+    return Iczelia::HTTP::redirect('/admin/');
+  }
+
+  my $rebuild_bin = _rebuild_bin_path();
+  if (!-x $rebuild_bin) {
+    $db->set_setting('cache.rebuild.phase', 'error');
+    $db->set_setting('cache.rebuild.error', "missing helper: $rebuild_bin");
+    $db->set_setting('cache.rebuild.finished_at', time());
+    return Iczelia::HTTP::redirect('/admin/');
+  }
+
+  my $pid = fork();
+  die "fork: $!" unless defined $pid;
+  if ($pid != 0) {
+    waitpid($pid, 0);
+    return Iczelia::HTTP::redirect('/admin/?rebuilding=1');
+  }
+
+  POSIX::setsid();
+  my $pid2 = fork();
+  POSIX::_exit(0) if !defined $pid2 || $pid2 != 0;
+
+  open STDIN,  '<',  '/dev/null';
+  open STDOUT, '>>', '/dev/null';
+  open STDERR, '>>', '/dev/null';
+  for my $fd (3 .. 255) {eval {POSIX::close($fd)}}
+
+  { exec($^X, $rebuild_bin, '--config', $config_path); }
+  POSIX::_exit(127);
+}
+
+sub _rebuild_bin_path {
+  return File::Spec->catfile($FindBin::RealBin, 'iczelia-rebuild-cache');
+}
+
+sub _cache_rebuild_cancel {
+  my ($ctx, $req) = @_;
+  my $err = _csrf_or_400($ctx, $req, 'cache:rebuild-cancel');
+  return $err if $err;
+  my $db    = $ctx->{db};
+  my $state = _rebuild_state($db);
+  if ($state->{phase} !~ /^(?:starting|math|html|cancelling)$/) {
+    return Iczelia::HTTP::redirect('/admin/');
+  }
+  my $pid   = $state->{pid} || 0;
+  my $alive = $pid > 0 && kill(0, $pid);
+
+  if (!$alive) {
+    _force_clear_rebuild($db);
+  }
+  elsif ($state->{phase} eq 'cancelling') {
+    kill 'KILL', -$pid;
+    _force_clear_rebuild($db);
+  }
+  else {
+    kill 'TERM', -$pid;
+    $db->set_setting('cache.rebuild.phase', 'cancelling');
+  }
+  return Iczelia::HTTP::redirect('/admin/');
+}
+
+sub _force_clear_rebuild {
+  my ($db) = @_;
+  $db->set_setting('cache.rebuild.phase',       'cancelled');
+  $db->set_setting('cache.rebuild.finished_at', time());
+  $db->set_setting('cache.rebuild.pid',         0);
+}
+
+sub _rebuild_state {
+  my ($db) = @_;
+  my %s;
+  for my $k (REBUILD_KEYS) {
+    $s{$k} = $db->setting("cache.rebuild.$k");
+  }
+  $s{$_} = ($s{$_} || 0) + 0 for qw(total done started_at finished_at pid);
+  $s{phase} //= 'idle';
+  $s{scope} //= 'all';
+  $s{error} //= '';
+  return \%s;
+}
+
+sub _cache_rebuild_status {
+  my ($ctx, $req) = @_;
+  require JSON::PP;
+  my $s   = _rebuild_state($ctx->{db});
+  my $r   = {
+    status    => 200,
+    headers   => {'Content-Type' => 'application/json; charset=utf-8'},
+    body      => JSON::PP::encode_json($s),
+    _no_cache => 1,
+  };
+  return $r;
+}
+
+sub _run_rebuild {
+  my ($cfg) = @_;
+  require Time::HiRes;
+  require Iczelia::Util;
+  require Iczelia::DB;
+  require Iczelia::Template;
+  require Iczelia::Tex;
+  require Iczelia::Cache;
+  require Iczelia::Render;
+  require Iczelia::Warmer;
+
+  my $db    = Iczelia::DB->connect($cfg);
+  my $scope = $db->setting('cache.rebuild.scope') // 'all';
+
+  $db->do_('DELETE FROM response_cache');
+  $db->do_('DELETE FROM tex_cache') if $scope eq 'all';
+  $db->do_('UPDATE pages SET rendered_html = NULL');
+  $db->do_('UPDATE posts SET rendered_html = NULL');
+  $db->do_('DELETE FROM settings WHERE key=?', 'math.cache_stats')
+    if $scope eq 'all';
+
+  if ($scope eq 'all') {
+    $db->set_setting('cache.rebuild.phase', 'math');
+    $db->set_setting('cache.rebuild.total', 0);
+    $db->set_setting('cache.rebuild.done',  0);
+    $db->disconnect;
+    eval {
+      Iczelia::Warmer->new(cfg => $cfg)->warmup(
+        progress_key => 'cache.rebuild.done',
+        total_key    => 'cache.rebuild.total',
+      );
+    };
+    $db = Iczelia::DB->connect($cfg);
+  }
+  my $pages = $db->col('SELECT slug FROM pages WHERE slug <> ?', 'home');
+  my $posts = $db->all(
+    q{SELECT kind, slug FROM posts
+        WHERE draft=0
+          AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))}
+  );
+  my @tasks = map {['page', $_]} @$pages;
+  push @tasks, map {['post', $_->{kind}, $_->{slug}]} @$posts;
+  my $total = scalar @tasks;
+
+  $db->set_setting('cache.rebuild.phase', 'html');
+  $db->set_setting('cache.rebuild.total', $total);
+  $db->set_setting('cache.rebuild.done',  0);
+  $db->disconnect;
+
+  if ($total) {
+    my $n = Iczelia::Util::detect_cores();
+    $n = $total if $n > $total;
+    $n ||= 1;
+    my @pids;
+    for my $w (0 .. $n - 1) {
+      my $pid = fork();
+      next unless defined $pid;
+      if ($pid == 0) {
+        $SIG{TERM} = sub {POSIX::_exit(0)};
+        $SIG{INT}  = sub {POSIX::_exit(0)};
+        my $cdb = Iczelia::DB->connect($cfg);
+        my $tpl = Iczelia::Template->new(
+          dirs => [$cfg->{'share-dir'} . '/templates']);
+        my $ctex = Iczelia::Tex->new(
+          db      => $cdb,
+          tmp_dir => $cfg->{'tmp-dir'}
+        );
+        my $ccache = Iczelia::Cache->new(
+          db      => $cdb,
+          tmp_dir => $cfg->{'tmp-dir'}
+        );
+        my $crnd = Iczelia::Render->new(
+          db       => $cdb,
+          template => $tpl,
+          tex      => $ctex,
+          cache    => $ccache,
+          cfg      => $cfg,
+        );
+        for (my $i = $w; $i < $total; $i += $n) {
+          my $t = $tasks[$i];
+          eval {
+            if    ($t->[0] eq 'page') {$crnd->render_page($t->[1])}
+            elsif ($t->[0] eq 'post') {$crnd->render_post($t->[1], $t->[2])}
+          };
+          $cdb->do_(
+            'UPDATE settings SET value = CAST(value AS INTEGER) + 1
+                 WHERE key = ?', 'cache.rebuild.done'
+          );
+        }
+        $cdb->disconnect;
+        POSIX::_exit(0);
+      }
+      push @pids, $pid;
+    }
+    waitpid($_, 0) for @pids;
+  }
+
+  $db = Iczelia::DB->connect($cfg);
+  $db->set_setting('cache.rebuild.phase',       'done');
+  $db->set_setting('cache.rebuild.finished_at', time());
+  $db->set_setting('cache.rebuild.pid',         0);
+  $db->disconnect;
 }
 
 # Force-rebuild the FTS5 index from posts. Useful after a manual sqlite

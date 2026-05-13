@@ -57,11 +57,12 @@ sub run {
   }
 }
 
-# Synchronous one-shot pass; called from bin/iczelia-server at boot
-# so the first end-user request doesn't hit a cold cache.
+# Synchronous one-shot pass: bin/iczelia-server runs this at boot,
+# bin/iczelia-rebuild-cache runs it for scope=all. force=>1 bypasses
+# the rebuild-phase guard since these callers _are_ the rebuild.
 sub warmup {
-  my ($self) = @_;
-  return $self->_pass;
+  my ($self, %opt) = @_;
+  return $self->_pass(force => 1, %opt);
 }
 
 sub _log {
@@ -81,12 +82,29 @@ sub _connect {
 }
 
 sub _pass {
-  my ($self) = @_;
+  my ($self, %opt) = @_;
   my ($db, $tex) = $self->_connect;
+
+  unless ($opt{force}) {
+    my $rebuild_phase = $db->setting('cache.rebuild.phase') // '';
+    if ($rebuild_phase =~ /^(?:starting|math|html|cancelling)$/) {
+      $db->disconnect;
+      return 0;
+    }
+  }
 
   my ($missing_ref, $total) = _collect_missing($db, $tex);
   my @missing = @$missing_ref;
   _save_stats($db, $total, $total - scalar(@missing), scalar @missing);
+
+  # Mirror per-fragment progress into caller-supplied settings keys so
+  # the admin dashboard can show a live X/Y during the math phase.
+  my $prog_key  = $opt{progress_key};
+  my $total_key = $opt{total_key};
+  if ($prog_key) {
+    $db->set_setting($prog_key, 0);
+    $db->set_setting($total_key, scalar @missing) if $total_key;
+  }
 
   if (@missing) {
     my $n_workers = $self->{workers} || 1;
@@ -105,6 +123,10 @@ sub _pass {
         my ($cdb, $ctex) = $self->_connect;
         for (my $i = $w; $i < @missing; $i += $n_workers) {
           eval {$ctex->render(@{$missing[$i]})};
+          $cdb->do_(
+            'UPDATE settings SET value = CAST(value AS INTEGER) + 1
+                 WHERE key = ?', $prog_key
+          ) if $prog_key;
         }
         $cdb->disconnect;
         exit 0;

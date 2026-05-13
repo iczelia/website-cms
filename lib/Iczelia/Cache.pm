@@ -17,15 +17,13 @@
 package Iczelia::Cache;
 use strict;
 use warnings;
-use Carp             qw(croak);
-use DBI              ();
-use Digest::SHA      qw(sha256_hex);
-use Encode           ();
-use File::Temp       ();
-use POSIX            ();
+use Carp              qw(croak);
+use DBI               ();
+use Digest::SHA       qw(sha256_hex);
+use Encode            ();
+use POSIX             ();
 use Iczelia::Minify   ();
 use Iczelia::Compress ();
-use Iczelia::Process ();
 
 # Response cache for public GETs. The request path stores the body
 # raw; compress_pending() fills gz/br variants from the warmer.
@@ -34,11 +32,10 @@ sub new {
   my ($class, %arg) = @_;
   croak "db required" unless $arg{db};
   return bless {
-    db        => $arg{db},
-    tmp_dir   => $arg{tmp_dir}   // '/tmp',
-    zopfli_i  => $arg{zopfli_i}  // 15,
-    brotli_q  => $arg{brotli_q}  // 11,
-    timeout_s => $arg{timeout_s} // 8,
+    db       => $arg{db},
+    tmp_dir  => $arg{tmp_dir}  // '/tmp',
+    brotli_q => $arg{brotli_q} // 11,
+    zopfli_i => $arg{zopfli_i} // 15,
 
     # Below this, the gzip header outweighs the saving.
     min_size => $arg{min_size} // 256,
@@ -404,25 +401,9 @@ sub size {
   return $self->{db}->one('SELECT COUNT(*) FROM response_cache') // 0;
 }
 
-# zopfli when available; fall back to pure-Perl level-9 deflate.
-# zopfli's CLI can't read stdin; shuttle through a temp file.
 sub _gzip {
   my ($self, $body) = @_;
-  if (Iczelia::Process::have_bin('zopfli')) {
-    my $tmp = File::Temp->new(
-      DIR    => $self->{tmp_dir},
-      SUFFIX => '.cache-in',
-      UNLINK => 1,
-    );
-    binmode $tmp;
-    print $tmp $body;
-    close $tmp;
-    my $out = Iczelia::Process::run_capped(
-      ['zopfli', '--gzip', "--i$self->{zopfli_i}", '-c', "$tmp"],
-      timeout => $self->{timeout_s});
-    return $out if defined $out && length $out;
-  }
-  return Iczelia::Compress::gzip($body);
+  return Iczelia::Compress::gzip($body, iterations => $self->{zopfli_i});
 }
 
 sub _brotli {
