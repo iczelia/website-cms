@@ -183,7 +183,8 @@ sub _var_dir_of {
 }
 
 # Extension-less chrome image: serve .avif if the UA accepts it and a
-# sibling exists, else .png. Vary: Accept so the edge cache splits.
+# sibling exists, else fall back to the original raster (.png/.gif).
+# Vary: Accept so the edge cache splits.
 sub _serve_image_pick {
   my ($root, $rel, $req) = @_;
   if ($rel =~ /\.[a-z0-9]+$/i) {
@@ -192,7 +193,10 @@ sub _serve_image_pick {
     return $r;
   }
   my $accept = ($req->{headers}{accept} // '');
-  my @tries = $accept =~ m{image/avif}i ? ("$rel.avif", "$rel.png") : ("$rel.png");
+  my @tries
+    = $accept =~ m{image/avif}i
+    ? ("$rel.avif", "$rel.png", "$rel.gif")
+    : ("$rel.png", "$rel.gif");
   for my $cand (@tries) {
     my $r = _serve_safe($root, $cand);
     if (($r->{status} // 0) == 200) {
