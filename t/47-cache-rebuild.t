@@ -300,20 +300,17 @@ my $req = {
 my $resp = Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
 is($resp->{status}, 303, 'cancel returns a redirect');
 
-# The child's handler should observe SIGTERM, mark cancelled, exit.
-my $deadline = time() + 5;
-while (time() < $deadline) {
-  last if ($db->setting('cache.rebuild.phase') // '') eq 'cancelled';
-  select(undef, undef, undef, 0.05);
-}
+# waitpid blocks until the child's SIGTERM handler has finished its DB
+# writes and called POSIX::_exit. Polling on a deadline raced under CI
+# load (handler latency vs. wall-clock deadline).
+waitpid($pid, 0);
+
 is($db->setting('cache.rebuild.phase'),
   'cancelled', 'rebuild child set phase=cancelled on SIGTERM');
 ok($db->setting('cache.rebuild.finished_at') >= $started_at,
   'finished_at recorded on cancel');
 is($db->setting('cache.rebuild.pid'),
   0, 'pid cleared on cancel');
-
-waitpid($pid, 0);
 
 # Idempotency: cancel when no rebuild is running just redirects.
 my $resp2 = Iczelia::Handlers::Admin::Cache::_cache_rebuild_cancel($ctx, $req);
