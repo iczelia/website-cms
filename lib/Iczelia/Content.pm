@@ -68,6 +68,7 @@ require Iczelia::Content::Media;
 require Iczelia::Content::Activity;
 require Iczelia::Content::Webring;
 require Iczelia::Content::Settings;
+require Iczelia::Content::Series;
 
 our @ISA = qw(
   Iczelia::Content::Pages
@@ -78,6 +79,7 @@ our @ISA = qw(
   Iczelia::Content::Activity
   Iczelia::Content::Webring
   Iczelia::Content::Settings
+  Iczelia::Content::Series
 );
 
 1;

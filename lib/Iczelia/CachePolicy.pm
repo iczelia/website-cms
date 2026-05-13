@@ -76,7 +76,7 @@ sub cache_control_for {
   return 'public, max-age=31536000, immutable'
     if $path =~ m{^/(?:vendor/|fonts/|assets-)};
   return 'public, max-age=86400'
-    if $path =~ m{^/(?:media/|favicon\.ico\z)};
+    if $path =~ m{^/(?:media/|og/|favicon\.ico\z)};
   return 'public, max-age=3600'
     if $path =~ m{^/(?:cms\.(?:css|js)|style\.|about\.compat\.css|common\.compat\.css)};
   return 'public, max-age=600' if $path eq '/pub.pgp';

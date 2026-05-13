@@ -374,7 +374,41 @@
 
     $$('.cms-kvtable').forEach(setupKvTable);
     setupSlugAutofill();
+    setupTagPicker();
     setupUnsavedGuard();
+  }
+
+  function setupTagPicker() {
+    var picker = document.querySelector('[data-cms-tag-picker]');
+    var input  = document.querySelector('[data-cms-tag-input]');
+    if (!picker || !input) return;
+
+    function parseTags(s) {
+      return (s || '').split(',').map(function (t) { return t.trim(); })
+                      .filter(function (t) { return t.length; });
+    }
+    function syncChips() {
+      var have = {};
+      parseTags(input.value).forEach(function (t) { have[t] = 1; });
+      $$('.cms-tag-chip', picker).forEach(function (b) {
+        var t = b.getAttribute('data-tag');
+        b.classList.toggle('cms-tag-chip-on', !!have[t]);
+      });
+    }
+    picker.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('.cms-tag-chip');
+      if (!btn) return;
+      e.preventDefault();
+      var tag = btn.getAttribute('data-tag');
+      var tags = parseTags(input.value);
+      var idx = tags.indexOf(tag);
+      if (idx >= 0) tags.splice(idx, 1);
+      else          tags.push(tag);
+      input.value = tags.join(', ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      syncChips();
+    });
+    input.addEventListener('input', syncChips);
   }
 
   if (document.readyState === 'loading') {

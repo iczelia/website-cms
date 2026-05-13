@@ -41,9 +41,27 @@
               </form></li>
 {% endfor %}          </ul>
 {% endif %}        </fieldset>
-        <fieldset class="cms-field cms-field-text">
+        <fieldset class="cms-field cms-field-text cms-field-tags">
           <legend>tags</legend>
-          <input type="text" name="tags" value="{{ post.tags }}" placeholder="comma, separated">
+          <input type="text" name="tags" value="{{ post.tags }}" placeholder="comma, separated" data-cms-tag-input>
+{% if post.tag_options %}          <div class="cms-tag-picker" data-cms-tag-picker>
+{% for t in post.tag_options %}            <button type="button" class="cms-tag-chip{% if t.selected %} cms-tag-chip-on{% endif %}" data-tag="{{ t.tag }}">{{ t.tag }}</button>
+{% endfor %}          </div>
+{% endif %}        </fieldset>
+        <fieldset class="cms-field cms-field-kappa">
+          <legend>kappa</legend>
+{% for k in post.kappa_options %}          <label class="cms-kappa-opt"><input type="checkbox" name="kappa" value="{{ k.glyph }}"{% if k.checked %} checked{% endif %}> <span class="cms-kappa-glyph">{{ k.glyph }}</span> {{ k.label }}</label>
+{% endfor %}          <small class="cms-help">pick up to two</small>
+        </fieldset>
+        <fieldset class="cms-field cms-field-text">
+          <legend>series</legend>
+          <select name="series_id">
+            <option value="">(none)</option>
+{% for s in post.series_options %}            <option value="{{ s.id }}"{% if s.selected %} selected{% endif %}>{{ s.title }}</option>
+{% endfor %}          </select>
+          <input type="number" name="series_position" min="1" max="999"
+                 value="{{ post.series_position }}" placeholder="position"
+                 style="width:6em">
         </fieldset>
         <fieldset class="cms-field cms-field-bool">
           <label><input type="checkbox" name="draft" value="1"{% if post.draft %} checked{% endif %}> draft</label>

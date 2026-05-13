@@ -43,6 +43,7 @@ sub register {
   $router->get('/guestbook/',     sub {_page($ctx, 'guestbook')});
   $router->get('/updates/',       sub {_updates($ctx)});
   $router->get('/search/',        sub {_search($ctx, $_[0])});
+  $router->get('/series/:slug/',  sub {_series_page($ctx, $_[0])});
   $router->get('/blog/:slug/',    sub {_post($ctx, 'blog',    $_[0])});
   $router->get('/journal/:slug/', sub {_post($ctx, 'journal', $_[0])});
 
@@ -266,6 +267,16 @@ sub _tag_feed {
     headers => {'Content-Type' => 'application/atom+xml; charset=utf-8'},
     body    => $xml,
   };
+}
+
+sub _series_page {
+  my ($ctx, $req) = @_;
+  my $slug = $req->{caps}{slug};
+  return Iczelia::HTTP::error(404)
+    unless defined $slug && $slug =~ /^[a-z0-9][a-z0-9-]{0,80}$/;
+  my $html = $ctx->render->render_series($slug);
+  return Iczelia::HTTP::error(404) unless defined $html;
+  return Iczelia::HTTP::html($html);
 }
 
 1;

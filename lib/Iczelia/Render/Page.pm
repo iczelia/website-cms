@@ -342,6 +342,10 @@ sub render_post {
 
   my $body_html = $self->_md($row->{body});
   my @tags      = split_tags($row->{tags});
+  my $wc        = $row->{word_count} // 0;
+  my $read_min  = $wc > 0 ? int(($wc + 199) / 200) : 0;
+  my $toc       = _build_toc($body_html);
+  my $series    = $self->_series_for_post($row);
 
   my $vars = $self->base_vars(
     title => "iczelia :: " . $row->{title},
@@ -350,6 +354,7 @@ sub render_post {
       canonical      => "/$kind/$slug/",
       og_type        => 'article',
       og_title       => $row->{title},
+      image          => "/og/$kind/$slug.png",
       description     => Iczelia::Render::Markup::_meta_desc($body_html),
       keywords       => join(', ', @tags),
       published_time => ($row->{date} // ''),
@@ -362,7 +367,10 @@ sub render_post {
       body_html   => $body_html,
       kind        => $kind,
       slug        => $slug,
-      word_count  => $row->{word_count} // 0,
+      word_count  => $wc,
+      read_min    => $read_min,
+      toc         => $toc,
+      series      => $series,
       kappa       => $row->{kappa}      // '',
       kappa_title => Iczelia::Render::_kappa_title($row->{kappa}),
     },
@@ -688,6 +696,118 @@ sub _post_list {
       };
   }
   return \@out;
+}
+
+sub render_series {
+  my ($self, $slug) = @_;
+  my $series =
+    $self->{db}->row(q{SELECT * FROM series WHERE slug=?}, $slug);
+  return undef unless $series;
+  my $rows = $self->{db}->all(
+    q{SELECT id, kind, slug, title, date, series_position
+        FROM posts
+       WHERE series_id = ? AND draft = 0
+         AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
+       ORDER BY series_position IS NULL, series_position, date, id},
+    $series->{id}
+  );
+  my @posts = map +{
+    kind     => $_->{kind},
+    slug     => $_->{slug},
+    title    => $_->{title},
+    date_fmt => fmt_date($_->{date}),
+    position => $_->{series_position},
+    url      => "/$_->{kind}/$_->{slug}/",
+  }, @$rows;
+  my $intro_html =
+      defined $series->{description} && length $series->{description}
+    ? $self->_md($series->{description}, inline => 0)
+    : '';
+  my $vars = $self->base_vars(
+    title       => "iczelia :: $series->{title}",
+    title_short => $series->{title},
+    slug        => $series->{slug},
+    page        => {is_series => 1},
+    meta        => {
+      canonical => "/series/$series->{slug}/",
+      description => (length $intro_html ? Iczelia::Render::Markup::_meta_desc($intro_html)
+        : "Series: $series->{title}"),
+    },
+    series => {
+      title       => $series->{title},
+      slug        => $series->{slug},
+      intro_html  => $intro_html,
+      posts       => \@posts,
+      post_count  => scalar @posts,
+    },
+  );
+  return $self->{template}->render('views/series.tpl', $vars);
+}
+
+# Build a table-of-contents hashref from a rendered post body. Scans
+# <h2> / <h3> elements and returns:
+#   { has_toc => 1, items => [ { level => 2|3, id, text }, ... ] }
+# Returns undef when fewer than 3 H2/H3 elements are present (a TOC
+# isn't useful for very short posts). The headings already carry stable
+# `id` attributes from Iczelia::Markup::_atx_heading.
+# If the post belongs to a series, fetch the series row plus the
+# immediate prev/next siblings (by series_position). Returns undef when
+# the post has no series.
+sub _series_for_post {
+  my ($self, $row) = @_;
+  return undef unless $row->{series_id};
+  my $s =
+    $self->{db}->row('SELECT id, slug, title FROM series WHERE id=?',
+    $row->{series_id});
+  return undef unless $s;
+  my ($prev, $next);
+  if (defined $row->{series_position}) {
+    $prev = $self->{db}->row(
+      q{SELECT kind, slug, title, series_position FROM posts
+         WHERE series_id = ? AND series_position < ? AND draft = 0
+           AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
+         ORDER BY series_position DESC LIMIT 1},
+      $row->{series_id}, $row->{series_position}
+    );
+    $next = $self->{db}->row(
+      q{SELECT kind, slug, title, series_position FROM posts
+         WHERE series_id = ? AND series_position > ? AND draft = 0
+           AND (publish_at IS NULL OR publish_at <= strftime('%s','now'))
+         ORDER BY series_position ASC LIMIT 1},
+      $row->{series_id}, $row->{series_position}
+    );
+    for my $sib (grep {defined} $prev, $next) {
+      $sib->{url} = "/$sib->{kind}/$sib->{slug}/";
+    }
+  }
+  return {
+    slug     => $s->{slug},
+    title    => $s->{title},
+    url      => "/series/$s->{slug}/",
+    position => $row->{series_position},
+    prev     => $prev,
+    next     => $next,
+  };
+}
+
+sub _build_toc {
+  my ($html) = @_;
+  return undef unless defined $html && length $html;
+  my @items;
+  while ($html =~ m{<h([23])\b[^>]*\bid="([^"]+)"[^>]*>(.*?)</h\1\s*>}gis) {
+    my ($level, $id, $inner) = ($1, $2, $3);
+
+    # Strip the anchor link that _atx_heading appends + any other tags;
+    # leave decoded entities for the text node.
+    $inner =~ s{<a\b[^>]*\bclass="ab-anchor"[^>]*>.*?</a>}{}gis;
+    $inner =~ s{<[^>]+>}{}g;
+    $inner =~ s/\s+/ /g;
+    $inner =~ s/^\s+|\s+$//g;
+    next unless length $inner;
+    push @items, {level => $level + 0, id => $id, text => $inner};
+  }
+  return undef if @items < 3;
+  return {has_toc => 1, items => \@items};
 }
 
 1;

@@ -28,6 +28,7 @@ use Iczelia::Handlers::Admin::Media     ();
 use Iczelia::Handlers::Admin::Pages     ();
 use Iczelia::Handlers::Admin::PGP       ();
 use Iczelia::Handlers::Admin::Posts     ();
+use Iczelia::Handlers::Admin::Series    ();
 use Iczelia::Handlers::Admin::Settings  ();
 use Iczelia::Handlers::Admin::Webring   ();
 
@@ -43,6 +44,7 @@ sub register {
 
   Iczelia::Handlers::Admin::Pages->register($router, $ctx);
   Iczelia::Handlers::Admin::Posts->register($router, $ctx);
+  Iczelia::Handlers::Admin::Series->register($router, $ctx);
 
   Iczelia::Handlers::Admin::Activity->register($router, $ctx);
 

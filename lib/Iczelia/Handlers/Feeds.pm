@@ -284,6 +284,17 @@ sub _sitemap {
     }
   } @$jour;
 
+  my $series = $db->all(
+    q{SELECT slug, updated_at FROM series ORDER BY title}
+  );
+  push @urls, map {
+    {
+      loc      => "$base/series/$_->{slug}/",
+      lastmod  => fmt_iso($_->{updated_at}),
+      priority => '0.5'
+    }
+  } @$series;
+
   my @bits;
   push @bits, '<?xml version="1.0" encoding="utf-8"?>';
   push @bits, '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';

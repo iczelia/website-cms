@@ -18,7 +18,7 @@ package Iczelia::Content::Posts;
 use strict;
 use warnings;
 use Carp          qw(croak);
-use Iczelia::Util qw(slugify);
+use Iczelia::Util qw(slugify split_tags);
 
 # Iczelia::Content mixin: post CRUD + revisions + aliases. Pulled
 # into the leaf Iczelia::Content via @ISA. $self is an Iczelia::Content
@@ -49,6 +49,8 @@ sub create_post {
   my $base = $rec->{slug} || slugify($rec->{title}) || 'untitled-' . time;
   my $body = $rec->{body} // '';
   my $publish_at = normalize_publish_at($rec->{publish_at});
+  my $series_id  = _opt_int($rec->{series_id});
+  my $series_pos = _opt_int($rec->{series_position});
 
   # INSERT OR IGNORE in a loop avoids the SELECT-then-INSERT race that
   # otherwise lets two concurrent creators both pass the uniqueness
@@ -58,12 +60,17 @@ sub create_post {
     my $rows = $self->{db}->do_(
       q{
             INSERT OR IGNORE INTO posts(kind, slug, title, date, tags, draft,
-                              body, word_count, publish_at, created_at, updated_at)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              body, word_count, publish_at,
+                              kappa,
+                              series_id, series_position,
+                              created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                    strftime('%s','now'), strftime('%s','now'))},
       $kind,              $slug, $rec->{title}, $rec->{date},
       $rec->{tags} // '', $rec->{draft} ? 1 : 0,
-      $body,              _word_count($body), $publish_at
+      $body,              _word_count($body), $publish_at,
+      $rec->{kappa} // '',
+      $series_id,         $series_pos
     );
     last if $rows;
     $slug = "$base-$i";
@@ -72,7 +79,23 @@ sub create_post {
   $self->{render}->invalidate_post($kind, $slug);
   $self->{render}->invalidate_page($kind);
   $self->{render}->invalidate_home;
+  $self->_bust_series($series_id) if $series_id;
   return $slug;
+}
+
+sub _opt_int {
+  my ($v) = @_;
+  return undef unless defined $v && $v ne '';
+  return undef unless $v =~ /\A-?\d+\z/;
+  return $v + 0;
+}
+
+sub _bust_series {
+  my ($self, $series_id) = @_;
+  return unless $series_id && $self->{render};
+  my $row = $self->{db}->row('SELECT slug FROM series WHERE id=?', $series_id);
+  return unless $row;
+  $self->{render}->invalidate_route("/series/$row->{slug}/");
 }
 
 sub update_post {
@@ -80,6 +103,8 @@ sub update_post {
   my $base       = $rec->{slug} || $old_slug;
   my $body       = $rec->{body} // '';
   my $publish_at = normalize_publish_at($rec->{publish_at});
+  my $series_id  = _opt_int($rec->{series_id});
+  my $series_pos = _opt_int($rec->{series_position});
 
   # Slug uniqueness is resolved INSIDE tx_immediate so two concurrent
   # renames to the same target serialize and one suffixes correctly.
@@ -137,12 +162,16 @@ sub update_post {
         q{
             UPDATE posts
                SET slug=?, title=?, date=?, tags=?, draft=?, body=?,
-                   word_count=?, publish_at=?, rendered_html=NULL,
+                   word_count=?, publish_at=?, kappa=?,
+                   series_id=?, series_position=?,
+                   rendered_html=NULL,
                    updated_at=strftime('%s','now')
              WHERE kind=? AND slug=?},
         $new_slug,             $rec->{title}, $rec->{date}, $rec->{tags} // '',
         $rec->{draft} ? 1 : 0, $body,
         _word_count($body),    $publish_at,
+        $rec->{kappa} // '',
+        $series_id,            $series_pos,
         $kind,                 $old_slug
       );
     }
@@ -151,6 +180,7 @@ sub update_post {
     $self->{render}->invalidate_post($kind, $old_slug);
   }
   $self->{render}->invalidate_post($kind, $new_slug);
+  $self->_bust_series($series_id) if $series_id;
   $self->{render}->invalidate_page($kind);
   $self->{render}->invalidate_home;
   return $new_slug;
@@ -177,6 +207,27 @@ sub delete_post {
   $self->{render}->invalidate_post($kind, $slug);
   $self->{render}->invalidate_page($kind);
   $self->{render}->invalidate_home;
+}
+
+sub list_tags_recent {
+  my ($self, $kind, $limit) = @_;
+  $limit ||= 40;
+  my $rows = $self->{db}->all(
+    q{SELECT date, tags FROM posts
+       WHERE kind=? AND tags<>''
+       ORDER BY date DESC, created_at DESC, id DESC}, $kind
+  );
+  my (%first_date, @order);
+  for my $r (@$rows) {
+    for my $t (split_tags($r->{tags})) {
+      next if exists $first_date{$t};
+      $first_date{$t} = $r->{date};
+      push @order, $t;
+      last if @order >= $limit;
+    }
+    last if @order >= $limit;
+  }
+  return [map +{tag => $_, last_used => $first_date{$_}}, @order];
 }
 
 sub list_aliases {

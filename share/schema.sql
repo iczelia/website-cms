@@ -47,29 +47,47 @@ CREATE TABLE IF NOT EXISTS pages (
 );
 
 CREATE TABLE IF NOT EXISTS posts (
-  id            INTEGER PRIMARY KEY,
-  kind          TEXT    NOT NULL CHECK (kind IN ('blog','journal')),
-  slug          TEXT    NOT NULL,
-  title         TEXT    NOT NULL,
-  date          TEXT    NOT NULL,
-  tags          TEXT    NOT NULL DEFAULT '',
-  draft         INTEGER NOT NULL DEFAULT 0,
-  body          TEXT    NOT NULL,
-  word_count    INTEGER NOT NULL DEFAULT 0,
-  publish_at    INTEGER,
+  id              INTEGER PRIMARY KEY,
+  kind            TEXT    NOT NULL CHECK (kind IN ('blog','journal')),
+  slug            TEXT    NOT NULL,
+  title           TEXT    NOT NULL,
+  date            TEXT    NOT NULL,
+  tags            TEXT    NOT NULL DEFAULT '',
+  draft           INTEGER NOT NULL DEFAULT 0,
+  body            TEXT    NOT NULL,
+  word_count      INTEGER NOT NULL DEFAULT 0,
+  publish_at      INTEGER,
   -- Editorial classification: zero, one, or two Greek letters that
   -- describe the post's flavour. Stored as the literal codepoints
   -- separated by a single space; rendered as a leading glyph.
   --   φ philosophy   π science   λ code/engineering
   --   δ release      ω opinion/retrospective   μ meta/personal
-  kappa         TEXT    NOT NULL DEFAULT '',
-  rendered_html TEXT,
-  rendered_at   INTEGER,
-  created_at    INTEGER NOT NULL DEFAULT 0,
-  updated_at    INTEGER NOT NULL,
+  kappa           TEXT    NOT NULL DEFAULT '',
+  -- Series grouping: post belongs to series.id with the given 1-based
+  -- position. Both are NULL for one-off posts. No FK constraint so the
+  -- column can be backfilled by hand; the app enforces referential
+  -- integrity.
+  series_id       INTEGER,
+  series_position INTEGER,
+  rendered_html   TEXT,
+  rendered_at     INTEGER,
+  created_at      INTEGER NOT NULL DEFAULT 0,
+  updated_at      INTEGER NOT NULL,
   UNIQUE (kind, slug)
 );
 CREATE INDEX IF NOT EXISTS posts_kind_date ON posts(kind, date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS posts_series ON posts(series_id, series_position);
+
+-- Post series (multi-part collections). The post's series_id points
+-- here, and series_position orders them within the series.
+CREATE TABLE IF NOT EXISTS series (
+  id          INTEGER PRIMARY KEY,
+  slug        TEXT    NOT NULL UNIQUE,
+  title       TEXT    NOT NULL,
+  description TEXT    NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
 
 -- Per-post slug aliases. When a post is renamed, the old slug becomes a
 -- 301 redirect to the canonical URL.

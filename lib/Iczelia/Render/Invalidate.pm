@@ -44,8 +44,10 @@ sub invalidate_post {
     $kind, $slug);
   return unless $self->{cache};
   $self->{cache}->bust_many(
-    "/$kind/$slug/", "/$kind/",    "/$kind/tags/", '/',
-    '/feed.xml',     '/index.xml', '/sitemap.xml',
+    "/$kind/$slug/", "/og/$kind/$slug.png",
+    "/$kind/",       "/$kind/tags/",
+    '/',             '/feed.xml',
+    '/index.xml',    '/sitemap.xml',
   );
   $self->{cache}->bust_prefix("/$kind/tag/");
 }

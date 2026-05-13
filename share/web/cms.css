@@ -84,6 +84,32 @@ a:hover { text-decoration: underline }
 }
 .cms-help { color: #888; font-size: 12px; margin: 0 0 0.4rem }
 
+.cms-field-kappa label.cms-kappa-opt {
+  display: block; margin: 0.15rem 0; font-size: 13px;
+}
+.cms-field-kappa .cms-kappa-glyph {
+  display: inline-block; min-width: 1.2em; text-align: center;
+  font-family: 'GreekOldFace', ui-monospace, monospace;
+  color: #8a5a00;
+}
+
+.cms-tag-picker {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 0.4rem; max-height: 9rem; overflow-y: auto;
+  padding: 4px; border: 1px dashed #ccc; background: #fff;
+  border-radius: 3px;
+}
+.cms-tag-chip {
+  background: #f3f3f3; border: 1px solid #ccc; color: #444;
+  padding: 0.1rem 0.45rem; cursor: pointer; font: inherit;
+  font-size: 12px; border-radius: 10px;
+}
+.cms-tag-chip:hover { background: #e6e6e6 }
+.cms-tag-chip-on {
+  background: #0044aa; color: #fff; border-color: #0044aa;
+}
+.cms-tag-chip-on:hover { background: #0033aa }
+
 .cms-edit-grid { display: grid; gap: 1rem; grid-template-columns: 3fr 1fr }
 @media (max-width: 800px) { .cms-edit-grid { grid-template-columns: 1fr } }
 

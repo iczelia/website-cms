@@ -26,6 +26,19 @@ use constant POST_BODY_MAX => 256 * 1024;
 use constant TITLE_MAX     => 200;
 use constant TAGS_MAX      => 200;
 
+# Editorial-classification glyphs; order shown in the editor matches
+# the order documented in schema.sql. Keep in sync with %KAPPA_LABEL
+# in Iczelia::Render.
+my @KAPPA_GLYPHS = (
+  ["\x{03c6}", 'philosophy'],
+  ["\x{03c0}", 'science'],
+  ["\x{03bb}", 'code'],
+  ["\x{03b4}", 'release'],
+  ["\x{03c9}", 'opinion'],
+  ["\x{03bc}", 'meta'],
+);
+my %KAPPA_OK = map {$_->[0] => 1} @KAPPA_GLYPHS;
+
 sub register {
   my ($class, $router, $ctx) = @_;
   my $gate = $ctx->auth->route_gate($ctx);
@@ -89,27 +102,61 @@ sub _render_post_form {
     }
   }
   my $rec = {
-    id             => 0,
-    slug           => '',
-    title          => '',
-    date           => ts_fmt(time),
-    tags           => '',
-    body           => '',
-    draft          => 0,
-    publish_at     => undef,
-    publish_at_fmt => '',
-    word_count     => 0,
-    aliases        => $aliases,
+    id              => 0,
+    slug            => '',
+    title           => '',
+    date            => ts_fmt(time),
+    tags            => '',
+    body            => '',
+    draft           => 0,
+    publish_at      => undef,
+    publish_at_fmt  => '',
+    word_count      => 0,
+    kappa           => '',
+    series_id       => undef,
+    series_position => '',
+    aliases         => $aliases,
   };
   if ($post) {
     %$rec = (
       %$rec, %$post,
-      publish_at_fmt => ts_to_local_input($post->{publish_at}),
-      updated_fmt    => ts_fmt($post->{updated_at}),
-      word_count     => $post->{word_count} // 0,
-      aliases        => $aliases,
+      publish_at_fmt  => ts_to_local_input($post->{publish_at}),
+      updated_fmt     => ts_fmt($post->{updated_at}),
+      word_count      => $post->{word_count} // 0,
+      series_position => $post->{series_position} // '',
+      aliases         => $aliases,
     );
   }
+
+  my $cur_series   = $rec->{series_id} // 0;
+  my $all_series   = $ctx->content->list_series;
+  $rec->{series_options} = [
+    map +{
+      id       => $_->{id},
+      title    => $_->{title},
+      selected => ($_->{id} == $cur_series ? 1 : 0),
+    },
+    @$all_series
+  ];
+  my %selected = map {$_ => 1} split /\s+/, ($rec->{kappa} // '');
+  $rec->{kappa_options} = [
+    map +{
+      glyph   => $_->[0],
+      label   => $_->[1],
+      checked => $selected{$_->[0]} ? 1 : 0,
+    },
+    @KAPPA_GLYPHS
+  ];
+
+  my %have_tag = map {$_ => 1} Iczelia::Util::split_tags($rec->{tags});
+  my $recent_tags = $ctx->content->list_tags_recent($kind);
+  $rec->{tag_options} = [
+    map +{
+      tag      => $_->{tag},
+      selected => $have_tag{$_->{tag}} ? 1 : 0,
+    },
+    @$recent_tags
+  ];
 
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_edit_post.tpl',
@@ -150,15 +197,36 @@ sub _validate_post {
       if $publish_at < time - 86400;
   }
 
+  my $kraw = $p->{kappa};
+  my @kvals
+    = !defined $kraw ? ()
+    : ref $kraw eq 'ARRAY' ? @$kraw
+    :                        ($kraw);
+  my (@kappa, %seen);
+  for my $g (@kvals) {
+    next unless defined $g && length $g && $KAPPA_OK{$g} && !$seen{$g}++;
+    push @kappa, $g;
+  }
+  return (undef, 'at most two kappa glyphs') if @kappa > 2;
+
+  my $series_id  = $p->{series_id};
+  my $series_pos = $p->{series_position};
+  $series_id  = undef if !defined $series_id  || $series_id  !~ /^\d+$/;
+  $series_pos = undef if !defined $series_pos || $series_pos !~ /^\d+$/;
+  $series_pos = undef unless defined $series_id;    # position only with a series
+
   return (
     {
-      title      => $title,
-      date       => $date,
-      slug       => $slug,
-      tags       => $p->{tags} // '',
-      body       => $body,
-      draft      => $p->{draft} ? 1 : 0,
-      publish_at => $publish_at,
+      title           => $title,
+      date            => $date,
+      slug            => $slug,
+      tags            => $p->{tags} // '',
+      body            => $body,
+      draft           => $p->{draft} ? 1 : 0,
+      publish_at      => $publish_at,
+      kappa           => join(' ', @kappa),
+      series_id       => $series_id,
+      series_position => $series_pos,
     },
     undef
   );

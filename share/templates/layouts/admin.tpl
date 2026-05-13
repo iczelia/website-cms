@@ -18,6 +18,7 @@
     <a href="/admin/">dashboard</a>
     <a href="/admin/blog/">blog</a>
     <a href="/admin/journal/">journal</a>
+    <a href="/admin/series/">series</a>
     <a href="/admin/updates/">updates</a>
     <a href="/admin/activity/">activity</a>
     <a href="/admin/webring/">webring</a>
