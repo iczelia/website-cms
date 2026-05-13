@@ -318,9 +318,16 @@ sub _fetch_bluesky {
       $rkey = $1;
     }
     my $url = $rkey ? "$profile_url/post/$rkey" : $profile_url;
+    my $author = $post->{author}{handle};
+    $author = $handle unless defined $author
+      && $author =~ /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253})$/;
+    my $url = $rkey ? "https://bsky.app/profile/$author/post/$rkey" : $profile_url;
+    my $is_repost = ref($f->{reason}) eq 'HASH'
+      && ($f->{reason}{'$type'} // '') =~ /reasonRepost/;
+    my $label = $is_repost ? 'last repost' : 'last post';
     push @rows,
       {
-      text      => length $short ? "last post: $short" : 'last post',
+      text      => length $short ? "$label: $short" : $label,
       url       => $url,
       posted_at => $when,
       };
