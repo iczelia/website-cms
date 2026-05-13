@@ -43,9 +43,9 @@ RUN apt-get update && \
         zopfli \
         tini \
     && apt-get install -y --no-install-recommends \
-        cpanminus build-essential libperl-dev libbrotli-dev \
+        cpanminus build-essential libperl-dev libbrotli-dev cmake \
     && (cd /tmp && cpanm --notest --installdeps .) \
-    && apt-get purge -y --auto-remove cpanminus build-essential libperl-dev libbrotli-dev \
+    && apt-get purge -y --auto-remove cpanminus build-essential libperl-dev libbrotli-dev cmake \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cpanm /tmp/cpanfile
 
