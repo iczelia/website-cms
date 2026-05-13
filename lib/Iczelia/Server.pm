@@ -27,8 +27,9 @@ use Carp             qw(croak);
 
 use Iczelia::HTTP;
 use Iczelia::Router;
-use Iczelia::Minify   ();
-use Iczelia::Compress ();
+use Iczelia::Minify      ();
+use Iczelia::Compress    ();
+use Iczelia::CachePolicy ();
 
 # Requests slower than this print a SLOW marker plus a timing
 # breakdown. Override via $ENV{ICZELIA_SLOW_REQ_S}.
@@ -560,12 +561,12 @@ sub _decide_keep_alive {
   return $client_conn =~ /\bkeep-alive\b/ ? 1 : 0;
 }
 
-# Cacheable GET/HEAD. Bypass policy lives in Iczelia::Cache; per-
-# response opt-out is the `_no_cache` flag honoured by _handle_one.
+# Cacheable GET/HEAD. Bypass policy lives in Iczelia::CachePolicy;
+# per-response opt-out is the `_no_cache` flag honoured by _handle_one.
 sub _cache_key_for {
   my ($self, $req) = @_;
   return undef unless $self->{cache};
-  return undef if $self->{cache}->bypass_for_request($req);
+  return undef if Iczelia::CachePolicy::bypass_for_request($req);
   return $req->{path};
 }
 

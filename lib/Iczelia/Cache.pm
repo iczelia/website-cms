@@ -22,8 +22,9 @@ use DBI               ();
 use Digest::SHA       qw(sha256_hex);
 use Encode            ();
 use POSIX             ();
-use Iczelia::Minify   ();
-use Iczelia::Compress ();
+use Iczelia::Minify      ();
+use Iczelia::Compress    ();
+use Iczelia::CachePolicy ();
 
 # Response cache for public GETs. The request path stores the body
 # raw; compress_pending() fills gz/br variants from the warmer.
@@ -44,54 +45,6 @@ sub new {
 
 my %PUBLISH_BUST_PATHS =
   map {$_ => 1} qw(/ /blog/ /journal/ /feed.xml /index.xml /rss.xml);
-
-# Daemon-cache eligibility. Returns 1 to skip both get() and put() for
-# this request. Per-response opt-outs live on the response itself (the
-# `_no_cache` flag honoured in Server::_handle_one); the patterns here
-# are structural bypasses for paths whose contents always vary per
-# request and so don't even warrant a cache lookup.
-sub bypass_for_request {
-  my ($self, $req) = @_;
-  return 1 unless $req->{method} eq 'GET' || $req->{method} eq 'HEAD';
-  return 1 if length($req->{query} // '');
-  my $path = $req->{path};
-  return 1 unless defined $path && length $path;
-
-  # Authenticated admin: never cache.
-  return 1 if $path =~ m{^/admin/?};
-  return 1 if $path =~ m{^/login/?$};
-  return 1 if $path =~ m{^/logout/?$};
-
-  # Home embeds a live GMT clock; caching would freeze it.
-  return 1 if $path eq '/';
-
-  # Guestbook embeds a per-visitor anon-CSRF token bound to a cookie;
-  # caching would leak one user's token to everyone else.
-  return 1 if $path =~ m{^/guestbook/?$};
-  return 1 if $req->{cookies} && exists $req->{cookies}{iczelia_sid};
-
-  # Chrome image packs dispatch avif/png by Accept and emit Vary: Accept.
-  # The internal cache keys by path alone and stamps a fixed Vary, so
-  # leave it to nginx (which honours Vary) to split these.
-  return 1
-    if $path =~ m{^/assets-(?:1024x768|800x600|600x400|about)/};
-  return 0;
-}
-
-# Response-side: Cache-Control max-age stamped on cache hits for static
-# assets. Distinct from bypass_for_request, which decides whether to
-# look up at all.
-sub _cache_control_for {
-  my ($path) = @_;
-  return 'public, max-age=31536000, immutable'
-    if $path =~ m{^/(?:vendor/|fonts/|assets-)};
-  return 'public, max-age=86400'
-    if $path =~ m{^/(?:media/|favicon\.ico\z)};
-  return 'public, max-age=3600'
-    if $path =~ m{^/(?:cms\.(?:css|js)|style\.|about\.compat\.css|common\.compat\.css)};
-  return 'public, max-age=600' if $path eq '/pub.pgp';
-  return 'no-store';
-}
 
 # Rows whose content-type is already-compressed media (image, font,
 # pre-zipped). Stored as body but never gz/br'd. Delegates to
@@ -219,7 +172,7 @@ sub get {
     'Content-Type'  => $head->{content_type},
     ETag            => qq{"$etag"},
     Vary            => 'Accept-Encoding',
-    'Cache-Control' => _cache_control_for($path),
+    'Cache-Control' => Iczelia::CachePolicy::cache_control_for($path),
     'X-Cache'       => 'HIT',
   );
   $hdr{'Content-Encoding'} = $enc if $enc;
@@ -315,7 +268,7 @@ sub put {
       'Content-Type'  => $ct,
       ETag            => qq{"$etag"},
       Vary            => 'Accept-Encoding',
-      'Cache-Control' => _cache_control_for($path),
+      'Cache-Control' => Iczelia::CachePolicy::cache_control_for($path),
       'X-Cache'       => 'STORE',
     },
     body => $body,

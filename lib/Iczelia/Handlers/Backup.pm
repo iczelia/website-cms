@@ -25,6 +25,7 @@ use File::Copy    qw(move);
 use Digest::SHA   qw(sha256_hex);
 use JSON::PP      ();
 use DBI           ();
+use Archive::Tar  ();
 
 # Backup: VACUUM INTO snapshot, ephemeral tables stripped, tar with
 # media/. Restore atomically swaps the live DB and media/ tree.
@@ -89,16 +90,10 @@ sub _export {
     return Iczelia::HTTP::error(500, "snapshot failed: $@");
   };
 
-  my $media_src = $ctx->cfg->{'media-dir'};
-  my $media_dst = "$work/media";
-  make_path($media_dst);
+  my $media_src   = $ctx->cfg->{'media-dir'};
   my @media_files = _list_dir_files($media_src);
-  _copy_file("$media_src/$_", "$media_dst/$_") for @media_files;
 
-  open my $mh, '>:raw', "$work/MANIFEST.json"
-    or
-    do {remove_tree($work); return Iczelia::HTTP::error(500, "manifest: $!")};
-  print $mh $JSON->encode(
+  my $manifest = $JSON->encode(
     {
       version     => 1,
       date        => _iso_date(),
@@ -106,23 +101,20 @@ sub _export {
       media_count => scalar(@media_files),
     }
   );
-  close $mh;
 
-  my $tar_path = "$tmp_dir/iczelia-backup-$stamp.tar";
-  my $rc       = system('tar', '-cf', $tar_path,
-    '-C', $work, 'site.db', 'media', 'MANIFEST.json');
-  remove_tree($work);
-  if ($rc != 0 || !-f $tar_path) {
-    unlink $tar_path if -e $tar_path;
-    return Iczelia::HTTP::error(500, "tar failed (rc=$rc)");
+  # Build the tar archive in memory via Archive::Tar; no shell-out.
+  my $tar = Archive::Tar->new;
+  $tar->add_data('site.db',       _slurp_raw($snap));
+  $tar->add_data('MANIFEST.json', $manifest);
+  for my $fn (@media_files) {
+    my $data = eval {_slurp_raw("$media_src/$fn")};
+    next unless defined $data;
+    $tar->add_data("media/$fn", $data);
   }
+  my $body = $tar->write;
+  remove_tree($work);
+  return Iczelia::HTTP::error(500, "tar build failed") unless defined $body;
 
-  open my $th, '<:raw', $tar_path
-    or return Iczelia::HTTP::error(500, "tar read: $!");
-  local $/;
-  my $body = <$th>;
-  close $th;
-  unlink $tar_path;
   return {
     status  => 200,
     headers => {
@@ -134,6 +126,38 @@ sub _export {
     body      => $body,
     _no_cache => 1,
   };
+}
+
+# Extract every entry from $tar_path into $dest_dir, preserving the
+# entry's relative path. Path-safety is asserted by the caller via
+# _archive_paths_safe; this helper double-checks each entry as defense
+# in depth. Returns 1 on success, 0 on any failure.
+sub _extract_archive {
+  my ($tar_path, $dest_dir) = @_;
+  my $iter = eval {Archive::Tar->iter($tar_path)};
+  return 0 unless $iter;
+  while (my $entry = eval {$iter->()}) {
+    next if $entry->is_dir;
+    my $name = $entry->full_path;
+    return 0 unless defined $name && length $name;
+    return 0 if $name =~ m{^/} || $name =~ m{(?:^|/)\.\.(?:/|$)};
+    my $target = "$dest_dir/$name";
+    my ($dir)  = $target =~ m{^(.+)/[^/]+$};
+    if (defined $dir && !-d $dir) {
+      eval {make_path($dir)} or return 0;
+    }
+    $entry->extract($target) or return 0;
+  }
+  return 1;
+}
+
+sub _slurp_raw {
+  my ($path) = @_;
+  open my $fh, '<:raw', $path or die "open $path: $!";
+  local $/;
+  my $data = <$fh>;
+  close $fh;
+  return $data;
 }
 
 sub _list_dir_files {
@@ -149,48 +173,23 @@ sub _list_dir_files {
 # archive can't fill the tmp volume on extract.
 use constant MAX_EXTRACTED => 512 * 1024 * 1024;
 
-# Returns 1 if the archive is safe to `tar -xf`: rejects absolute and
-# .. entries, and bails when the entry-size sum exceeds MAX_EXTRACTED.
+# Returns 1 if the archive is safe to extract: rejects absolute and
+# `..` entries, and bails when the entry-size sum exceeds MAX_EXTRACTED.
+# Archive::Tar's iterator gives raw byte-name entries directly, so
+# there's no shell-out and no quoting-style edge case to parse.
 sub _archive_paths_safe {
   my ($tar_path) = @_;
-
-  # --quoting-style=escape forces tar to backslash-escape any embedded
-  # whitespace / control characters in filenames, so the split below
-  # can rely on whitespace separating fields. Without it, a filename
-  # like `evil ../../etc/passwd` shifts $f[5] and slips past the
-  # `(^|/)\.\.(/|$)` check.
-  open my $lst, '-|', 'tar', '--quoting-style=escape', '-tvf', $tar_path
-    or return 0;
-  my $ok    = 1;
+  my $iter = eval {Archive::Tar->iter($tar_path)};
+  return 0 unless $iter;
   my $total = 0;
-  while (my $line = <$lst>) {
-    chomp $line;
-
-    # tar -tvf line: "perm owner size date time name [-> target]".
-    my @f = split /\s+/, $line, 6;
-    next unless @f == 6;
-    my ($size, $entry) = ($f[2], $f[5]);
-    $entry =~ s/ -> .*$//;
-    if ($entry =~ m{^/} || $entry =~ m{(?:^|/)\.\.(?:/|$)}) {
-      $ok = 0;
-      last;
-    }
-
-    # An escape sequence in the entry means the source filename held
-    # whitespace or control chars; refuse such backup archives outright
-    # rather than try to decode them safely.
-    if ($entry =~ /\\[^\\]/) {
-      $ok = 0;
-      last;
-    }
-    $total += $size if $size =~ /^\d+$/;
-    if ($total > MAX_EXTRACTED) {
-      $ok = 0;
-      last;
-    }
+  while (my $entry = eval {$iter->()}) {
+    my $name = $entry->full_path;
+    return 0 unless defined $name && length $name;
+    return 0 if $name =~ m{^/} || $name =~ m{(?:^|/)\.\.(?:/|$)};
+    $total += $entry->size || 0;
+    return 0 if $total > MAX_EXTRACTED;
   }
-  close $lst;
-  return $ok;
+  return 1;
 }
 
 sub _import {
@@ -215,7 +214,7 @@ sub _import {
     remove_tree($work);
     return Iczelia::HTTP::error(400, 'archive contains unsafe paths');
   }
-  if (system('tar', '-xf', $tar_path, '-C', $work) != 0) {
+  unless (_extract_archive($tar_path, $work)) {
     remove_tree($work);
     return Iczelia::HTTP::error(400, 'tar extract failed');
   }
