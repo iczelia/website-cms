@@ -317,7 +317,6 @@ sub _fetch_bluesky {
     if ($post->{uri} && $post->{uri} =~ m{/app\.bsky\.feed\.post/([^/]+)$}) {
       $rkey = $1;
     }
-    my $url = $rkey ? "$profile_url/post/$rkey" : $profile_url;
     my $author = $post->{author}{handle};
     $author = $handle unless defined $author
       && $author =~ /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253})$/;
