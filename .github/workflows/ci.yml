@@ -19,10 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: install perl + sqlite driver
+      - name: install perl + system deps for cpan builds
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libdbi-perl libdbd-sqlite3-perl
+          sudo apt-get install -y --no-install-recommends \
+            libdbi-perl libdbd-sqlite3-perl \
+            cpanminus build-essential libperl-dev \
+            libcrypt-dev libbrotli-dev
+      - name: install cpan deps
+        run: sudo cpanm --notest --quiet IO::Compress::Brotli Gzip::Zopfli
       - name: perl -c on every module and script
         run: |
           for f in $(find lib -name '*.pm') $(find bin -type f); do
