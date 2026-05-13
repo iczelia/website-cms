@@ -1169,6 +1169,13 @@ sub invalidate_page {
   $self->_bust_for_page($slug);
 }
 
+sub invalidate_route {
+  my ($self, $path) = @_;
+  return unless defined $path && length $path;
+  return unless $self->{cache};
+  $self->{cache}->bust($path);
+}
+
 sub invalidate_post {
   my ($self, $kind, $slug) = @_;
   $self->{db}

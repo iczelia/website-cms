@@ -232,8 +232,8 @@ sub delete_alias {
     $kind, $from_slug
   );
   # Bust the alias path so the cached redirect goes away.
-  $self->{render}{cache}->bust("/$kind/$from_slug/")
-    if $self->{render} && $self->{render}{cache};
+  $self->{render}->invalidate_route("/$kind/$from_slug/")
+    if $self->{render};
 }
 
 # Word count of a markdown body. Strips code, inline links/images, HTML
@@ -347,8 +347,8 @@ sub create_dynamic_page {
         VALUES(?,?,?,?, strftime('%s','now'))},
     $route, $rec->{title}, $tpl, $rec->{data} // '{}'
   );
-  if ($self->{render} && $self->{render}{cache}) {
-    $self->{render}{cache}->bust_many($route, '/sitemap.xml');
+  if (my $r = $self->{render}) {
+    $r->invalidate_route($_) for $route, '/sitemap.xml';
   }
   return ($self->{db}->last_id, undef);
 }
@@ -378,8 +378,8 @@ sub update_dynamic_page {
     $route, $rec->{title} // $cur->{title}, $tpl,
     $rec->{data} // $cur->{data}, $id
   );
-  if ($self->{render} && $self->{render}{cache}) {
-    $self->{render}{cache}->bust_many($cur->{route}, $route, '/sitemap.xml');
+  if (my $r = $self->{render}) {
+    $r->invalidate_route($_) for $cur->{route}, $route, '/sitemap.xml';
   }
   return ($id, undef);
 }
@@ -388,9 +388,8 @@ sub delete_dynamic_page {
   my ($self, $id) = @_;
   my $cur = $self->get_dynamic_page($id) or return;
   $self->{db}->do_('DELETE FROM dynamic_pages WHERE id=?', $id);
-  if ($self->{render} && $self->{render}{cache}) {
-    $self->{render}{cache}->bust($cur->{route});
-    $self->{render}{cache}->bust('/sitemap.xml');
+  if (my $r = $self->{render}) {
+    $r->invalidate_route($_) for $cur->{route}, '/sitemap.xml';
   }
 }
 
