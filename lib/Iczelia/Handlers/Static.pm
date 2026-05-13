@@ -106,6 +106,8 @@ sub register {
   }
 
   # Root-level CSS files referenced directly by the chrome.
+  $router->get('/common.compat.css',
+    sub {_serve_safe($r_chrome, "common.compat.css")});
   $router->get('/style.mobile.compat.css',
     sub {_serve_safe($r_chrome, "style.mobile.compat.css")});
   $router->get('/style.600.compat.css',

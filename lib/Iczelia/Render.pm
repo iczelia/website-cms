@@ -429,10 +429,38 @@ sub _kind_intro_html {
   return $self->_md($data->{intro} // '', inline => 1);
 }
 
+# Index for a kind with no published posts: a real page (current year,
+# empty list) rather than 404. Year archives still 404 when empty.
+sub _render_empty_kind_index {
+  my ($self, $kind, $tpl) = @_;
+  my $year = (gmtime)[5] + 1900;
+  my $intro_html = $self->_kind_intro_html($kind);
+  my $vars = $self->base_vars(
+    title       => "iczelia :: $kind",
+    title_short => $kind,
+    slug        => $kind,
+    page        => {"is_$kind" => 1},
+    meta        => {
+      canonical  => "/$kind/",
+      description => (length $intro_html ? _meta_desc($intro_html)
+        : "No $kind posts yet."),
+    },
+    data      => {intro_html => $intro_html},
+    posts     => [],
+    entries   => [],
+    cur_year  => $year,
+    years     => [{year => $year, current => 1}],
+    prev_year => undef,
+    next_year => undef,
+  );
+  return $self->{template}->render($tpl, $vars);
+}
+
 sub render_journal_index {
   my ($self) = @_;
   my $nav = $self->_year_nav_data('journal', undef);
-  return undef unless $nav;
+  return $self->_render_empty_kind_index('journal', 'views/journal.tpl')
+    unless $nav;
   return $self->render_journal_year($nav->{cur_year}, canonical => '/journal/');
 }
 
@@ -487,7 +515,7 @@ sub render_journal_year {
 sub render_blog_index {
   my ($self) = @_;
   my $nav = $self->_year_nav_data('blog', undef);
-  return undef unless $nav;
+  return $self->_render_empty_kind_index('blog', 'views/blog.tpl') unless $nav;
   return $self->render_blog_year($nav->{cur_year}, canonical => '/blog/');
 }
 
