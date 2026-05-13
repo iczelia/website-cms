@@ -199,6 +199,43 @@ sub delete_post {
   $self->{render}->invalidate_home;
 }
 
+sub list_aliases {
+  my ($self, $post_id) = @_;
+  return $self->{db}->all(
+    q{SELECT from_slug, created_at FROM post_aliases
+        WHERE post_id=? ORDER BY created_at DESC}, $post_id
+  );
+}
+
+sub list_revisions {
+  my ($self, $post_id) = @_;
+  return $self->{db}->all(
+    q{SELECT revision_num, title, date, author, created_at, draft, publish_at
+        FROM post_revisions
+        WHERE post_id=?
+        ORDER BY revision_num DESC}, $post_id
+  );
+}
+
+sub get_revision {
+  my ($self, $post_id, $rev) = @_;
+  return $self->{db}->row(
+    q{SELECT * FROM post_revisions WHERE post_id=? AND revision_num=?},
+    $post_id, $rev
+  );
+}
+
+sub delete_alias {
+  my ($self, $kind, $from_slug) = @_;
+  $self->{db}->do_(
+    'DELETE FROM post_aliases WHERE kind=? AND from_slug=?',
+    $kind, $from_slug
+  );
+  # Bust the alias path so the cached redirect goes away.
+  $self->{render}{cache}->bust("/$kind/$from_slug/")
+    if $self->{render} && $self->{render}{cache};
+}
+
 # Word count of a markdown body. Strips code, inline links/images, HTML
 # tags - keeps the visible text - then counts whitespace-separated words.
 sub _word_count {
@@ -601,6 +638,46 @@ sub set_settings {
   if ($math_changed) {
     $self->{db}->do_('DELETE FROM tex_cache');
   }
+}
+
+sub list_activity {
+  my ($self) = @_;
+  return $self->{db}->all(
+    'SELECT * FROM activity ORDER BY source, position'
+  );
+}
+
+sub list_media {
+  my ($self, $limit) = @_;
+  $limit //= 200;
+  return $self->{db}->all(
+    q{SELECT id, filename, orig_name, content_type, size, sha256,
+             uploaded_at, thumb_filename
+        FROM media ORDER BY uploaded_at DESC LIMIT ?}, $limit
+  );
+}
+
+sub get_media {
+  my ($self, $id) = @_;
+  return $self->{db}->row(
+    'SELECT filename, thumb_filename FROM media WHERE id=?', $id
+  );
+}
+
+sub create_media {
+  my ($self, %m) = @_;
+  $self->{db}->do_(
+    q{INSERT OR IGNORE INTO media
+        (filename, orig_name, content_type, size, sha256,
+         uploaded_at, thumb_filename)
+        VALUES(?, ?, ?, ?, ?, strftime('%s','now'), ?)},
+    @m{qw(filename orig_name content_type size sha256 thumb_filename)}
+  );
+}
+
+sub delete_media {
+  my ($self, $id) = @_;
+  $self->{db}->do_('DELETE FROM media WHERE id=?', $id);
 }
 
 1;

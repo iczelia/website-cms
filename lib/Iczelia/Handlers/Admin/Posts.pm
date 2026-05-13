@@ -83,10 +83,7 @@ sub _render_post_form {
   my $action  = $post ? "/admin/$kind/$post->{slug}/edit" : "/admin/$kind/new";
   my $aliases = [];
   if ($post) {
-    my $rows = $ctx->{db}->all(
-      q{SELECT from_slug, created_at FROM post_aliases
-               WHERE post_id=? ORDER BY created_at DESC}, $post->{id}
-    );
+    my $rows = $ctx->{content}->list_aliases($post->{id});
     for my $a (@$rows) {
       push @$aliases,
         {
@@ -220,12 +217,7 @@ sub _revisions_list {
   my $slug = $req->{caps}{slug};
   my $post = $ctx->{content}->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $rows = $ctx->{db}->all(
-    q{SELECT revision_num, title, date, author, created_at, draft, publish_at
-            FROM post_revisions
-           WHERE post_id=?
-        ORDER BY revision_num DESC}, $post->{id}
-  );
+  my $rows = $ctx->{content}->list_revisions($post->{id});
   my $sid = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{created_fmt}  = ts_fmt($r->{created_at});
@@ -253,10 +245,7 @@ sub _revisions_view {
   my $rev  = $req->{caps}{rev} + 0;
   my $post = $ctx->{content}->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $row =
-    $ctx->{db}
-    ->row(q{SELECT * FROM post_revisions WHERE post_id=? AND revision_num=?},
-    $post->{id}, $rev);
+  my $row = $ctx->{content}->get_revision($post->{id}, $rev);
   return Iczelia::HTTP::error(404) unless $row;
   my $sid = $req->{auth_sid};
   $row->{created_fmt} = ts_fmt($row->{created_at});
@@ -286,10 +275,7 @@ sub _revisions_restore {
   return $err if $err;
   my $post = $ctx->{content}->get_post($kind, $slug)
     or return Iczelia::HTTP::error(404);
-  my $row =
-    $ctx->{db}
-    ->row(q{SELECT * FROM post_revisions WHERE post_id=? AND revision_num=?},
-    $post->{id}, $rev);
+  my $row = $ctx->{content}->get_revision($post->{id}, $rev);
   return Iczelia::HTTP::error(404) unless $row;
 
   # Restore is itself a save: the restored body becomes the next
@@ -317,9 +303,7 @@ sub _alias_delete {
   my $err  =
     $ctx->{auth}->require_csrf($req, "alias-del:$kind:$slug:$from");
   return $err if $err;
-  $ctx->{db}->do_('DELETE FROM post_aliases WHERE kind=? AND from_slug=?',
-    $kind, $from);
-  $ctx->{cache}->bust("/$kind/$from/") if $ctx->{cache};
+  $ctx->{content}->delete_alias($kind, $from);
   return Iczelia::HTTP::redirect("/admin/$kind/$slug/edit");
 }
 

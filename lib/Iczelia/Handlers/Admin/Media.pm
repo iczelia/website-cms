@@ -43,11 +43,7 @@ sub register {
 
 sub _media_list {
   my ($ctx, $req) = @_;
-  my $rows = $ctx->{db}->all(
-    q{SELECT id, filename, orig_name, content_type, size, sha256,
-                 uploaded_at, thumb_filename
-          FROM media ORDER BY uploaded_at DESC LIMIT 200}
-  );
+  my $rows = $ctx->{content}->list_media;
   my $sid = $req->{auth_sid};
   for my $r (@$rows) {
     $r->{url} = '/media/' . $r->{filename};
@@ -120,11 +116,13 @@ sub _media_upload {
     }
   }
 
-  $ctx->{db}->do_(
-    q{INSERT OR IGNORE INTO media
-            (filename, orig_name, content_type, size, sha256, uploaded_at, thumb_filename)
-          VALUES(?, ?, ?, ?, ?, strftime('%s','now'), ?)},
-    $name, $f->{filename}, $ct, $f->{size}, $sha, $thumb_filename
+  $ctx->{content}->create_media(
+    filename       => $name,
+    orig_name      => $f->{filename},
+    content_type   => $ct,
+    size           => $f->{size},
+    sha256         => $sha,
+    thumb_filename => $thumb_filename,
   );
 
   return _json_ok({url => "/media/$name", filename => $name});
@@ -135,8 +133,7 @@ sub _media_delete {
   my $id  = $req->{caps}{id} + 0;
   my $err = $ctx->{auth}->require_csrf($req, "media:del:$id");
   return $err if $err;
-  my $row = $ctx->{db}
-    ->row('SELECT filename, thumb_filename FROM media WHERE id=?', $id);
+  my $row = $ctx->{content}->get_media($id);
   if ($row) {
     my $dir = $ctx->{cfg}{'media-dir'};
 
@@ -150,7 +147,7 @@ sub _media_delete {
       unlink $path if -e $path;
     }
   }
-  $ctx->{db}->do_('DELETE FROM media WHERE id=?', $id);
+  $ctx->{content}->delete_media($id);
   return Iczelia::HTTP::redirect('/admin/media/');
 }
 

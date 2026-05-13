@@ -78,8 +78,7 @@ sub _updates_save {
 
 sub _activity_view {
   my ($ctx, $req) = @_;
-  my $rows =
-    $ctx->{db}->all('SELECT * FROM activity ORDER BY source, position');
+  my $rows = $ctx->{content}->list_activity;
   my %by_src;
   for my $r (@$rows) {push @{$by_src{$r->{source}}}, $r}
   my $currently =
