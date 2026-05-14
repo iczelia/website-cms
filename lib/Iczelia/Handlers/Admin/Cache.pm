@@ -155,8 +155,8 @@ sub _cache_rebuild_cancel {
     force_clear_rebuild($db);
   }
   else {
-    kill 'TERM', -$pid;
     $db->set_setting(REBUILD_PHASE, 'cancelling');
+    kill 'TERM', -$pid;
   }
   return Iczelia::HTTP::redirect('/admin/');
 }
