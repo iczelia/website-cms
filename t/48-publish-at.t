@@ -94,7 +94,7 @@ my ($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(
 );
 ok($rec && !defined $rec->{publish_at}, 'blank publish_at -> undef');
 
-# 5. Validator: past publish_at -> rejected.
+# 5. Validator: past publish_at -> accepted (publish now / backdate).
 ($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(
   {
     title      => 't',
@@ -104,8 +104,8 @@ ok($rec && !defined $rec->{publish_at}, 'blank publish_at -> undef');
   },
   undef
 );
-ok(!$rec, 'past publish_at rejected');
-like($err, qr/past/, 'past publish_at error message');
+ok($rec && !$err, 'past publish_at accepted');
+is($rec->{publish_at}, 1577836800, 'past publish_at -> epoch int');
 
 # 6. Validator: future publish_at -> accepted, returned as epoch int.
 ($rec, $err) = Iczelia::Handlers::Admin::Posts::_validate_post(

@@ -37,7 +37,7 @@ sub get_post {
 
 sub list_posts {
   my ($self, $kind, %opt) = @_;
-  my $sql = 'SELECT id, slug, title, date, tags, draft, updated_at
+  my $sql = 'SELECT id, slug, title, date, tags, draft, publish_at, updated_at
                FROM posts WHERE kind=?';
   $sql .= ' AND draft=0' if $opt{published_only};
   $sql .= ' ORDER BY date DESC, created_at DESC, id DESC';

@@ -13,7 +13,7 @@
         <td><a href="/admin/{{ kind }}/{{ p.slug }}/edit">{{ p.title }}</a></td>
         <td><code>{{ p.slug }}</code></td>
         <td>{{ p.date }}</td>
-        <td>{% if p.draft %}<span class="cms-badge cms-badge-draft">draft</span>{% else %}published{% endif %}</td>
+        <td><span class="cms-badge {{ p.status_cls }}">{{ p.status }}</span></td>
         <td><a href="/{{ kind }}/{{ p.slug }}/" target="_blank" rel="noopener">view</a></td>
       </tr>
 {% endfor %}    </tbody>

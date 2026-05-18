@@ -63,6 +63,18 @@ sub register {
 sub _post_list {
   my ($ctx, $req, $kind) = @_;
   my $posts = $ctx->content->list_posts($kind);
+  my $now   = time;
+  for my $p (@$posts) {
+    if ($p->{draft}) {
+      ($p->{status}, $p->{status_cls}) = ('draft', 'cms-badge-draft');
+    }
+    elsif (defined $p->{publish_at} && $p->{publish_at} > $now) {
+      ($p->{status}, $p->{status_cls}) = ('scheduled', 'cms-badge-scheduled');
+    }
+    else {
+      ($p->{status}, $p->{status_cls}) = ('published', 'cms-badge-pub');
+    }
+  }
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_post_list.tpl',
     title => "$kind posts",
@@ -187,15 +199,14 @@ sub _validate_post {
   my $date = $p->{date} || '';
   return (undef, 'invalid date') unless $date =~ /^\d{4}-\d{2}-\d{2}$/;
 
-  # publish_at: past timestamps are almost always a typo for `date`.
+  # publish_at in the past means publish now / backdated; render
+  # queries already gate on publish_at <= now.
   my $pub_in = $p->{publish_at} // '';
   my $publish_at;
   if (length $pub_in) {
     $publish_at = Iczelia::Content::Posts::normalize_publish_at($pub_in);
     return (undef, 'invalid publish_at')
       unless defined $publish_at;
-    return (undef, 'publish_at in the past')
-      if $publish_at < time - 86400;
   }
 
   my $kraw = $p->{kappa};

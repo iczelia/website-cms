@@ -35,10 +35,7 @@
           <input type="text" name="slug" value="{{ post.slug }}" pattern="[a-z0-9-]+" maxlength="80">
 {% if post.aliases %}          <ul class="cms-aliases">
 {% for a in post.aliases %}            <li><code>/{{ kind }}/{{ a.from_slug }}/</code> &rarr; current
-              <form method="POST" action="/admin/{{ kind }}/{{ post.slug }}/aliases/{{ a.from_slug }}/delete" class="cms-inline-form">
-                <input type="hidden" name="csrf" value="{{ a.csrf_del }}">
-                <button type="submit" class="cms-btn cms-btn-tiny" onclick="return confirm('drop this alias?')">drop</button>
-              </form></li>
+              <button type="submit" form="aldel-{{ a.from_slug }}" class="cms-btn cms-btn-tiny" onclick="return confirm('drop this alias?')">drop</button></li>
 {% endfor %}          </ul>
 {% endif %}        </fieldset>
         <fieldset class="cms-field cms-field-text cms-field-tags">
@@ -81,5 +78,8 @@
 {% if post.id %}      <button type="submit" formaction="/admin/{{ kind }}/{{ post.slug }}/delete" formmethod="POST" class="cms-btn cms-btn-danger" onclick="return confirm('delete this post?')">delete</button>
 {% endif %}    </p>
   </form>
-</article>
+{% if post.aliases %}{% for a in post.aliases %}  <form id="aldel-{{ a.from_slug }}" method="POST" action="/admin/{{ kind }}/{{ post.slug }}/aliases/{{ a.from_slug }}/delete" hidden>
+    <input type="hidden" name="csrf" value="{{ a.csrf_del }}">
+  </form>
+{% endfor %}{% endif %}</article>
 {% endblock %}
