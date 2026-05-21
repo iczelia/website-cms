@@ -415,6 +415,19 @@ sub html {
   };
 }
 
+sub json {
+  my ($data, %opt) = @_;
+  require JSON::PP;
+  return {
+    status  => $opt{status} || 200,
+    headers => {
+      'Content-Type'  => 'application/json; charset=utf-8',
+      'Cache-Control' => 'no-store',
+    },
+    body => JSON::PP->new->utf8(0)->canonical(1)->encode($data),
+  };
+}
+
 sub error {
   my ($status, $msg) = @_;
   return {

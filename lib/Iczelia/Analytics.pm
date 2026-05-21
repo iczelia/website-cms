@@ -18,6 +18,7 @@ package Iczelia::Analytics;
 use strict;
 use warnings;
 use Digest::SHA qw(sha256_hex);
+use Iczelia::UA ();
 
 # visitor_hash = sha256(ip|ua|daily_salt)[0..15]. Salt rotates at
 # UTC midnight; raw IP/UA never lands in the DB.
@@ -56,18 +57,6 @@ sub _seed_secret {
   return $hex;
 }
 
-sub _ua_class {
-  my ($ua) = @_;
-  $ua = lc($ua // '');
-  return 'other' unless length $ua;
-  return 'bot'
-    if $ua =~
-    /(?:bot|crawler|spider|scrap|fetch|monitor|preview|headless|httpclient|python-requests|libwww|curl|wget)/;
-  return 'mobile'
-    if $ua =~ /(?:android|iphone|ipad|mobile)/;
-  return 'browser';
-}
-
 sub _referer_host {
   my ($req) = @_;
   my $ref = $req->{headers}{'referer'} // $req->{headers}{'referrer'};
@@ -101,8 +90,9 @@ sub flush {
             q{
                     INSERT INTO analytics_events(
                         ts, path, status, method, visitor_hash,
-                        referer_host, ua_class)
-                    VALUES(?,?,?,?,?,?,?)}, @$r
+                        referer_host, ua_class, browser, os, device,
+                        bot_ua)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)}, @$r
           );
         }
       }
@@ -123,12 +113,15 @@ sub log_request {
   my $ua   = $req->{headers}{'user-agent'} // '';
   my $salt = _daily_salt($db);
   my $vh   = substr(sha256_hex("$ip|$ua|$salt"), 0, 16);
+  my $u    = Iczelia::UA::parse($ua);
   push @BUFFER,
     [
     time,                   $path,
     $resp->{status} // 200, $req->{method} // 'GET',
     $vh,                    _referer_host($req),
-    _ua_class($ua),
+    $u->{ua_class},         $u->{browser},
+    $u->{os},               $u->{device},
+    $u->{bot_ua},
     ];
   my $now = time;
 
@@ -182,6 +175,25 @@ sub aggregate_due {
               count = analytics_referrers.count + excluded.count
         }, $cutoff
       );
+      for my $k (
+        ['browser', 'browser'], ['os', 'os'],
+        ['device',  'device'],  ['bot', 'bot_ua'],
+        )
+      {
+        my ($kind, $col) = @$k;
+        $d->do_(
+          qq{
+            INSERT INTO analytics_ua(date, kind, label, count)
+            SELECT strftime('%Y-%m-%d', ts, 'unixepoch'),
+                   '$kind', $col, COUNT(*)
+              FROM analytics_events
+             WHERE ts < ? AND $col IS NOT NULL AND $col <> ''
+             GROUP BY 1, 3
+            ON CONFLICT(date, kind, label) DO UPDATE SET
+              count = analytics_ua.count + excluded.count
+        }, $cutoff
+        );
+      }
       $d->do_('DELETE FROM analytics_events WHERE ts < ?', $cutoff);
     }
   );
@@ -260,6 +272,19 @@ sub dashboard_data {
     q{SELECT SUM(views) AS views, SUM(uniques) AS uniques, SUM(bots) AS bots
         FROM analytics_daily WHERE date >= ?}, $start
   ) || {views => 0, uniques => 0, bots => 0};
+  $_ //= 0 for @{$totals}{qw(views uniques bots)};
+
+  my %ua;
+  for my $kind (qw(browser os device bot)) {
+    $ua{$kind} = $db->all(
+      q{SELECT label, SUM(count) AS count
+          FROM analytics_ua
+         WHERE date >= ? AND kind = ?
+         GROUP BY label
+         ORDER BY count DESC LIMIT 30}, $start, $kind
+    );
+  }
+
   return {
     range       => $range,
     bots_hidden => $exclude_bots,
@@ -267,42 +292,13 @@ sub dashboard_data {
     top_paths   => $top_paths,
     top_refs    => $top_refs,
     totals      => $totals,
+    ua          => {
+      browsers => $ua{browser},
+      os       => $ua{os},
+      devices  => $ua{device},
+      bots     => $ua{bot},
+    },
   };
-}
-
-# Inline SVG bar chart - returns an HTML string with no JS.
-sub render_bars_svg {
-  my ($rows, %opt) = @_;
-  my $w   = $opt{width}  || 720;
-  my $h   = $opt{height} || 200;
-  my $pad = 20;
-  my $n   = scalar @$rows;
-  return '<p>(no data)</p>' unless $n;
-  my $col = $opt{column} || 'views';
-  my $max = 0;
-  for my $r (@$rows) {$max = $r->{$col} if $r->{$col} > $max}
-  $max = 1 if $max <= 0;
-  my $bw    = ($w - 2 * $pad) / $n;
-  my @parts = (
-    qq{<svg class="cms-chart" viewBox="0 0 $w $h" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">},
-  );
-  my $i = 0;
-
-  for my $r (@$rows) {
-    my $v  = $r->{$col};
-    my $bh = ($h - 2 * $pad) * ($v / $max);
-    my $x  = sprintf '%.1f', $pad + $bw * $i;
-    my $y  = sprintf '%.1f', $h - $pad - $bh;
-    my $bb = sprintf '%.1f', $bw * 0.85;
-    $bh = sprintf '%.1f', $bh;
-    push @parts,
-      qq{<rect x="$x" y="$y" width="$bb" height="$bh" fill="#4a6da7"><title>$r->{date}: $v</title></rect>};
-    $i++;
-  }
-  push @parts,
-    qq{<line x1="$pad" y1="@{[$h-$pad]}" x2="@{[$w-$pad]}" y2="@{[$h-$pad]}" stroke="#888"/>};
-  push @parts, qq{</svg>};
-  return join '', @parts;
 }
 
 1;

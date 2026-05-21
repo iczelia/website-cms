@@ -172,6 +172,9 @@ CREATE TABLE IF NOT EXISTS highlight_langs (
 -- Server-side analytics. analytics_events is the rolling raw buffer
 -- (capped to ~250k rows by the aggregator). analytics_daily and
 -- analytics_referrers are the long-term roll-up.
+-- browser/os hold derived families for human visitors only; bot_ua
+-- holds the raw (cleaned) UA string for bots. A raw human UA is never
+-- stored.
 CREATE TABLE IF NOT EXISTS analytics_events (
   id            INTEGER PRIMARY KEY,
   ts            INTEGER NOT NULL,
@@ -180,7 +183,11 @@ CREATE TABLE IF NOT EXISTS analytics_events (
   method        TEXT    NOT NULL,
   visitor_hash  TEXT    NOT NULL,
   referer_host  TEXT,
-  ua_class      TEXT    NOT NULL
+  ua_class      TEXT    NOT NULL,
+  browser       TEXT,
+  os            TEXT,
+  device        TEXT,
+  bot_ua        TEXT
 );
 CREATE INDEX IF NOT EXISTS analytics_events_ts ON analytics_events(ts DESC);
 CREATE TABLE IF NOT EXISTS analytics_daily (
@@ -196,6 +203,16 @@ CREATE TABLE IF NOT EXISTS analytics_referrers (
   referer_host TEXT    NOT NULL,
   count        INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (date, referer_host)
+);
+
+-- Daily roll-up of UA breakdowns. kind is 'browser', 'os', 'device'
+-- or 'bot'; label is the family name (or raw bot UA for kind='bot').
+CREATE TABLE IF NOT EXISTS analytics_ua (
+  date  TEXT    NOT NULL,
+  kind  TEXT    NOT NULL,
+  label TEXT    NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (date, kind, label)
 );
 
 CREATE TABLE IF NOT EXISTS updates (

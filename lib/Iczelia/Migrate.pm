@@ -67,6 +67,23 @@ my @MIGRATIONS = (
         'ALTER TABLE posts ADD COLUMN series_position INTEGER');
     },
   },
+
+  # 0.1.1 -> 0.1.2: UA breakdown. Adds derived browser/os/device and a
+  # raw bot UA column to analytics_events. The analytics_ua roll-up
+  # table is created by CREATE TABLE IF NOT EXISTS in schema.sql.
+  {
+    version => '0.1.1 -> 0.1.2',
+    name    => 'analytics_events.browser/os/device/bot_ua',
+    check   =>
+      sub {_has_column($_[0], 'analytics_events', 'browser')},
+    apply => sub {
+      my ($db) = @_;
+      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN browser TEXT');
+      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN os TEXT');
+      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN device TEXT');
+      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN bot_ua TEXT');
+    },
+  },
 );
 
 sub run {

@@ -28,84 +28,93 @@ my $tmpdir = File::Temp->newdir;
 my $db     = Iczelia::DB->connect("$tmpdir/test.db");
 $db->apply_schema_file("$FindBin::Bin/../share/schema.sql");
 
-# 1. UA classification.
-is(Iczelia::Analytics::_ua_class('Mozilla/5.0'),               'browser');
-is(Iczelia::Analytics::_ua_class('Mozilla/5.0 (iPhone; CPU)'), 'mobile');
-is(Iczelia::Analytics::_ua_class('Googlebot/2.1'),             'bot');
-is(Iczelia::Analytics::_ua_class('curl/8.0'),                  'bot');
-is(Iczelia::Analytics::_ua_class(''),                          'other');
+my $FIREFOX =
+  'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0';
+my $GOOGLEBOT =
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
 
-# 2. Log a few requests.
+# 1. Log human + bot requests.
 for my $p (qw(/blog/foo/ /blog/bar/ /blog/foo/)) {
-  my $req = {
-    path    => $p,
+  Iczelia::Analytics::log_request(
+    $db,
+    {
+      path    => $p,
+      method  => 'GET',
+      remote  => '198.51.100.7',
+      headers => {'user-agent' => $FIREFOX},
+    },
+    {status => 200}
+  );
+}
+Iczelia::Analytics::log_request(
+  $db,
+  {
+    path    => '/blog/foo/',
     method  => 'GET',
-    remote  => '198.51.100.7',
-    headers => {'user-agent' => 'Mozilla/5.0'},
-  };
-  Iczelia::Analytics::log_request($db, $req, {status => 200});
+    remote  => '203.0.113.9',
+    headers => {'user-agent' => $GOOGLEBOT},
+  },
+  {status => 200}
+);
+Iczelia::Analytics::flush($db);
+is($db->one('SELECT COUNT(*) FROM analytics_events'), 4, 'four events logged');
+
+# Derived UA columns land on the row; raw human UA does not.
+my $human = $db->row(
+  q{SELECT * FROM analytics_events WHERE ua_class != 'bot' LIMIT 1});
+is($human->{browser}, 'Firefox', 'human browser derived');
+is($human->{os},      'Linux',   'human os derived');
+is($human->{device},  'desktop', 'human device derived');
+is($human->{bot_ua},  undef,     'no raw UA stored for humans');
+
+my $bot = $db->row(q{SELECT * FROM analytics_events WHERE ua_class = 'bot'});
+is($bot->{device}, 'bot',   'bot device');
+is($bot->{browser}, undef,  'bot has no browser family');
+like($bot->{bot_ua}, qr/Googlebot/, 'raw bot UA stored');
+
+# 2. Skipped paths don't get logged.
+for my $p (qw(/healthz /admin/foo /cms.css)) {
+  Iczelia::Analytics::log_request(
+    $db,
+    {path => $p, method => 'GET', remote => 'x', headers => {}},
+    {status => 200}
+  );
 }
 Iczelia::Analytics::flush($db);
-my $n = $db->one('SELECT COUNT(*) FROM analytics_events');
-is($n, 3, 'three events logged');
+is($db->one('SELECT COUNT(*) FROM analytics_events'),
+  4, 'admin/healthz/static skipped');
 
-# 3. Skipped paths don't get logged.
-Iczelia::Analytics::log_request(
-  $db,
-  {
-    path    => '/healthz',
-    method  => 'GET',
-    remote  => 'x',
-    headers => {},
-  },
-  {status => 200}
-);
-Iczelia::Analytics::log_request(
-  $db,
-  {
-    path    => '/admin/foo',
-    method  => 'GET',
-    remote  => 'x',
-    headers => {},
-  },
-  {status => 200}
-);
-Iczelia::Analytics::log_request(
-  $db,
-  {
-    path    => '/cms.css',
-    method  => 'GET',
-    remote  => 'x',
-    headers => {},
-  },
-  {status => 200}
-);
-Iczelia::Analytics::flush($db);
-$n = $db->one('SELECT COUNT(*) FROM analytics_events');
-is($n, 3, 'admin/healthz/static skipped');
-
-# 4. Aggregator. We need events older than today for the rollup to fire,
-# so push them back manually.
-$db->do_("UPDATE analytics_events SET ts = ts - 86400");
+# 3. Aggregator. Push events back a day so the rollup fires.
+$db->do_('UPDATE analytics_events SET ts = ts - 86400');
 Iczelia::Analytics::aggregate_due($db);
-my $rows = $db->all('SELECT * FROM analytics_daily ORDER BY path');
-is(scalar(@$rows), 2, 'two distinct paths in daily roll-up');
-my %by_path = map {$_->{path} => $_} @$rows;
-is($by_path{'/blog/foo/'}{views}, 2, 'foo got 2 views');
-is($by_path{'/blog/bar/'}{views}, 1, 'bar got 1 view');
 
-# Events older than the cutoff have been deleted.
-my $remaining = $db->one('SELECT COUNT(*) FROM analytics_events');
-is($remaining, 0, 'old events trimmed');
+my %by_path =
+  map {$_->{path} => $_} @{$db->all('SELECT * FROM analytics_daily')};
+is(scalar(keys %by_path), 2, 'two distinct paths in daily roll-up');
+is($by_path{'/blog/foo/'}{views}, 3, 'foo got 3 views');
+is($by_path{'/blog/foo/'}{bots},  1, 'foo got 1 bot view');
+is($by_path{'/blog/bar/'}{views}, 1, 'bar got 1 view');
+is($db->one('SELECT COUNT(*) FROM analytics_events'), 0, 'old events trimmed');
+
+# 4. UA roll-up.
+my %ua;
+$ua{"$_->{kind}:$_->{label}"} = $_->{count}
+  for @{$db->all('SELECT * FROM analytics_ua')};
+is($ua{'browser:Firefox'}, 3, 'browser roll-up');
+is($ua{'os:Linux'},        3, 'os roll-up');
+is($ua{'device:desktop'},  3, 'device roll-up');
+is($ua{'device:bot'},      1, 'bot device roll-up');
+ok((grep {/^bot:/} keys %ua), 'raw bot UA roll-up');
 
 # 5. Dashboard data.
 my $d = Iczelia::Analytics::dashboard_data($db, range => 'all');
-is($d->{totals}{views}, 3, 'totals.views = 3');
+is($d->{totals}{views}, 4, 'totals.views = 4');
+is($d->{totals}{bots},  1, 'totals.bots = 1');
 ok(scalar(@{$d->{top_paths}}) >= 2, 'top_paths populated');
-
-# 6. Bar SVG.
-my $svg = Iczelia::Analytics::render_bars_svg($d->{days}, column => 'views');
-like($svg, qr/<svg/,  'svg rendered');
-like($svg, qr/<rect/, 'svg has bars');
+is($d->{ua}{browsers}[0]{label}, 'Firefox', 'top browser is Firefox');
+is($d->{ua}{browsers}[0]{count}, 3,         'top browser count');
+ok(scalar(@{$d->{ua}{bots}}) >= 1, 'bot breakdown populated');
+ok((grep {$_->{label} eq 'desktop'} @{$d->{ua}{devices}}),
+  'devices breakdown has desktop');
 
 done_testing;

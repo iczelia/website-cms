@@ -8,7 +8,7 @@
   </header>
 
 {% if events %}  <table class="cms-table">
-    <thead><tr><th>ts (UTC)</th><th>method</th><th>path</th><th>status</th><th>visitor</th><th>ua_class</th><th>referer</th></tr></thead>
+    <thead><tr><th>ts (UTC)</th><th>method</th><th>path</th><th>status</th><th>visitor</th><th>class</th><th>device</th><th>ua</th><th>referer</th></tr></thead>
     <tbody>
 {% for e in events %}      <tr>
         <td>{{ e.ts_fmt }}</td>
@@ -17,6 +17,8 @@
         <td>{{ e.status }}</td>
         <td><code>{{ e.visitor_hash }}</code></td>
         <td>{{ e.ua_class }}</td>
+        <td>{{ e.device }}</td>
+        <td class="cms-anal-ua">{{ e.ua_detail }}</td>
         <td>{{ e.referer_host }}</td>
       </tr>
 {% endfor %}    </tbody>

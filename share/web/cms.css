@@ -299,21 +299,93 @@ a:hover { text-decoration: underline }
 }
 
 /* analytics dashboard */
-.cms-analytics .cms-anal-totals {
-  display: flex; gap: 1.5rem; margin: 1rem 0;
-  padding: 0.75rem; background: #f6f6f6;
-  border: 1px solid #ddd; border-radius: 3px;
+.cms-anal-block { margin: 1.75rem 0 }
+.cms-anal-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
 }
-.cms-analytics .cms-anal-totals strong {
-  font-size: 1.4rem; display: block;
+.cms-anal-head h2 { margin: 0 }
+.cms-anal-empty, .cms-anal-loading { color: #999; font-style: italic; padding: 0.5rem 0 }
+.cms-anal-note { font-size: 11px; color: #999; margin: 0.4rem 0 0 }
+
+.cms-anal-controls {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  font-size: 13px; color: #555; margin: 0.75rem 0;
 }
-.cms-analytics .cms-anal-block { margin: 1.5rem 0 }
-.cms-analytics .cms-chart {
-  width: 100%; max-width: 720px;
-  height: 200px; display: block;
-  background: #fafafa; border: 1px solid #ddd;
+.cms-anal-ctl { display: flex; align-items: center; gap: 0.4rem }
+.cms-anal-lbl { color: #888 }
+.cms-anal-ctl-right { display: flex; align-items: center; gap: 0.8rem; margin-left: auto }
+.cms-anal-stamp { color: #999; font-size: 12px }
+.cms-anal-check { display: flex; align-items: center; cursor: pointer }
+
+.cms-anal-segctl { display: inline-flex }
+.cms-seg {
+  font: inherit; font-size: 12px; padding: 0.2rem 0.6rem;
+  border: 1px solid #ccc; background: #fff; color: #555; cursor: pointer;
 }
-.cms-anal-controls { font-size: 13px; color: #555 }
+.cms-anal-segctl .cms-seg { border-right-width: 0 }
+.cms-anal-segctl .cms-seg:last-child { border-right-width: 1px }
+.cms-seg:hover { background: #f0f0f0 }
+.cms-seg-on, .cms-seg-on:hover { background: #4a6da7; color: #fff; border-color: #4a6da7 }
+
+.cms-anal-cards {
+  display: grid; gap: 0.75rem; margin: 1rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.cms-anal-card {
+  background: #f6f6f6; border: 1px solid #ddd; border-radius: 3px;
+  padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 2px;
+}
+.cms-anal-card strong { font-size: 1.5rem; color: #333; line-height: 1.1 }
+.cms-anal-card-lbl { font-size: 12px; color: #666 }
+.cms-anal-card-sub { font-size: 11px; color: #999 }
+
+.cms-chart-box {
+  position: relative; height: 280px; margin-top: 0.6rem;
+  background: #fafafa; border: 1px solid #ddd; border-radius: 3px;
+}
+.cms-chart { width: 100%; height: 100%; display: block }
+.cms-chart-grid { stroke: #e6e6e6; stroke-width: 1 }
+.cms-chart-axis { fill: #999; font-size: 10px }
+.cms-chart-bar { fill: #4a6da7 }
+.cms-chart-bar-uniques { fill: #3f8f6f }
+.cms-chart-bar-bots { fill: #b3704a }
+.cms-chart-bar-on { fill-opacity: 0.6 }
+.cms-chart-tip {
+  position: absolute; display: none; pointer-events: none; z-index: 5;
+  background: #222; color: #fff; padding: 0.4rem 0.55rem; border-radius: 3px;
+  font-size: 11px; line-height: 1.5; white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.cms-chart-tip strong { display: block; margin-bottom: 2px }
+.cms-chart-tip span { display: block }
+
+.cms-anal-table th.cms-sortable { cursor: pointer; user-select: none; white-space: nowrap }
+.cms-anal-table th.cms-sortable:hover { background: #e9e9e9 }
+.cms-anal-table td { font-variant-numeric: tabular-nums }
+
+.cms-barlist { display: flex; flex-direction: column; gap: 3px; margin-top: 0.5rem }
+.cms-barlist-row { display: flex; align-items: center; gap: 8px; font-size: 13px }
+.cms-barlist-label {
+  flex: 0 0 200px; color: #444;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cms-barlist-track {
+  flex: 1; height: 14px; background: #eee; border-radius: 2px; overflow: hidden;
+}
+.cms-barlist-fill { display: block; height: 100%; background: #4a6da7 }
+.cms-barlist-count { flex: 0 0 64px; text-align: right; font-variant-numeric: tabular-nums }
+.cms-barlist-pct { flex: 0 0 50px; text-align: right; color: #999; font-size: 12px }
+.cms-fill-ref { background: #7a6aa7 }
+.cms-fill-browsers { background: #4a6da7 }
+.cms-fill-os { background: #3f8f6f }
+.cms-fill-devices { background: #c79a3a }
+.cms-fill-bots { background: #b3704a }
+
+.cms-anal-ua {
+  max-width: 280px; font-size: 12px; color: #666;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cms-aliases { list-style: none; padding: 0.4rem 0; margin: 0; font-size: 12px }
 .cms-aliases li { margin: 0.2rem 0 }
 .cms-btn-tiny { font-size: 11px; padding: 0.1rem 0.4rem }

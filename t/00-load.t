@@ -26,6 +26,8 @@ my @mods = qw(
   Iczelia::Router
   Iczelia::Server
   Iczelia::SelfUpdate
+  Iczelia::UA
+  Iczelia::Analytics
 );
 
 plan tests => scalar @mods;
