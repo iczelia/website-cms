@@ -276,8 +276,10 @@ sub put {
 }
 
 # Fill body_gz/body_br for rows missing them. Returns rows updated.
-# Statement is prepared once and the batch runs in one tx so we pay
-# one fsync regardless of how many rows compress this pass.
+# Compression runs with no transaction open: brotli q11 and zopfli
+# cost seconds per page, so holding the write lock across them would
+# starve every other writer until busy_timeout. Only the UPDATEs run
+# under the lock, batched into one tx to amortize the fsync.
 sub compress_pending {
   my ($self, %opt) = @_;
   return 0 unless $self->{compress};
@@ -293,44 +295,44 @@ sub compress_pending {
   );
   return 0 unless @$rows;
 
+  # Phase 1: compress, no lock held. Each entry is [path, gz, br].
+  my @pending;
+  for my $row (@$rows) {
+    my $body = $row->{body};
+    my $ct   = $row->{content_type} // '';
+    my $skip =
+        !defined $body
+      || length($body) < $self->{min_size}
+      || _is_binary_media($ct);
+
+    if ($skip) {
+
+      # Stamp ''/'' so this row drops out of the NULL-gz/NULL-br
+      # scan instead of starving real work.
+      push @pending, [$row->{path}, '', ''];
+      next;
+    }
+
+    my $body_gz = $self->_gzip($body);
+    my $body_br = $self->_brotli($body);
+
+    # Both compressors failed: leave NULL so the next pass retries
+    # rather than poisoning the row with empty BLOBs.
+    next unless defined $body_gz || defined $body_br;
+    push @pending, [$row->{path}, $body_gz // '', $body_br // ''];
+  }
+  return 0 unless @pending;
+
+  # Phase 2: write the blobs back under one short-lived write lock.
   my $sth = $self->{db}->dbh->prepare(
     q{UPDATE response_cache SET body_gz=?, body_br=? WHERE path=?});
-
   my $count = 0;
   $self->{db}->tx(
     sub {
-      for my $row (@$rows) {
-        my $body = $row->{body};
-        my $ct   = $row->{content_type} // '';
-        my $skip =
-            !defined $body
-          || length($body) < $self->{min_size}
-          || _is_binary_media($ct);
-
-        if ($skip) {
-
-          # Stamp ''/'' so this row drops out of the
-          # NULL-gz/NULL-br scan instead of starving real work.
-          $sth->bind_param(1, '', DBI::SQL_BLOB());
-          $sth->bind_param(2, '', DBI::SQL_BLOB());
-          $sth->bind_param(3, $row->{path});
-          $sth->execute;
-          $count++;
-          next;
-        }
-
-        my $body_gz = $self->_gzip($body);
-        my $body_br = $self->_brotli($body);
-
-        # Both compressors failed: leave NULL so the next pass
-        # retries rather than poisoning the row with empty BLOBs.
-        next unless defined $body_gz || defined $body_br;
-        $body_gz = '' unless defined $body_gz;
-        $body_br = '' unless defined $body_br;
-
-        $sth->bind_param(1, $body_gz, DBI::SQL_BLOB());
-        $sth->bind_param(2, $body_br, DBI::SQL_BLOB());
-        $sth->bind_param(3, $row->{path});
+      for my $p (@pending) {
+        $sth->bind_param(1, $p->[1], DBI::SQL_BLOB());
+        $sth->bind_param(2, $p->[2], DBI::SQL_BLOB());
+        $sth->bind_param(3, $p->[0]);
         $sth->execute;
         $count++;
       }

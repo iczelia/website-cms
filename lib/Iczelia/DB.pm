@@ -132,33 +132,46 @@ sub col {
 
 sub last_id {$_[0]->dbh->sqlite_last_insert_rowid}
 
+# A COMMIT or ROLLBACK that itself fails leaves the handle stuck in an
+# open transaction, holding the write lock for every later request this
+# worker serves. When that happens, drop the handle so the next request
+# starts on a clean connection instead of inheriting a wedged lock.
 sub tx {
   my ($self, $cb) = @_;
   my $dbh = $self->dbh;
   $dbh->begin_work;
   my $r = eval {$cb->($self)};
-  if ($@) {
-    my $e = $@;
+  if (my $e = $@) {
     eval {$dbh->rollback};
+    $self->reconnect unless $dbh->{AutoCommit};
     die $e;
   }
-  $dbh->commit;
+  eval {$dbh->commit; 1} or do {
+    my $e = $@;
+    eval {$dbh->rollback};
+    $self->reconnect unless $dbh->{AutoCommit};
+    die $e;
+  };
   return $r;
 }
 
 # For read-then-write that must be atomic across workers
-# (throttle counters, post-revision snapshots).
+# (throttle counters, post-revision snapshots). The raw BEGIN keeps
+# DBI's AutoCommit at 1, so a failed ROLLBACK is the wedge signal here.
 sub tx_immediate {
   my ($self, $cb) = @_;
   my $dbh = $self->dbh;
   $dbh->do('BEGIN IMMEDIATE');
   my $r = eval {$cb->($self)};
-  if ($@) {
-    my $e = $@;
-    eval {$dbh->do('ROLLBACK')};
+  if (my $e = $@) {
+    eval {$dbh->do('ROLLBACK'); 1} or $self->reconnect;
     die $e;
   }
-  $dbh->do('COMMIT');
+  eval {$dbh->do('COMMIT'); 1} or do {
+    my $e = $@;
+    eval {$dbh->do('ROLLBACK'); 1} or $self->reconnect;
+    die $e;
+  };
   return $r;
 }
 
