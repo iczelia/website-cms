@@ -63,6 +63,7 @@ sub _render_dynamic_form {
     : '/admin/dynamic/new';
   my $tpl_opts    = _dynamic_template_options();
   my $current_tpl = $row ? $row->{template} : ($opt{template} || 'generic');
+  $_->{selected} = ($_->{name} eq $current_tpl ? 1 : 0) for @$tpl_opts;
 
   my $schema = $ctx->schema->load($current_tpl);
   my $data   = $row ? $ctx->schema->decode($row->{data}) : {};

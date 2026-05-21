@@ -24,7 +24,7 @@
     <fieldset class="cms-field cms-field-text">
       <legend>template</legend>
       <select name="template">
-{% for t in template_opts %}        <option value="{{ t.name }}"{% if t.name == current_tpl %} selected{% endif %}>{{ t.label }}</option>
+{% for t in template_opts %}        <option value="{{ t.name }}"{% if t.selected %} selected{% endif %}>{{ t.label }}</option>
 {% endfor %}      </select>
     </fieldset>
 
