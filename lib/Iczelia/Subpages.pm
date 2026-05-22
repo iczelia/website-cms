@@ -138,10 +138,12 @@ sub _strip_common_prefix {
   return @raw;
 }
 
-# extract_zip($bytes) -> (\@files, undef) | (undef, $error).
+# extract_zip($bytes, %opt) -> (\@files, undef) | (undef, $error).
 # Each file: { path, content, content_type, size, is_binary }.
+# unlimited => 1 drops the file/total/count caps (filesystem imports).
 sub extract_zip {
-  my ($data) = @_;
+  my ($data, %opt) = @_;
+  my $unlimited = $opt{unlimited};
   return (undef, 'empty upload') unless defined $data && length $data;
 
   my $z = IO::Uncompress::Unzip->new(\$data, Transparent => 0)
@@ -164,14 +166,16 @@ sub extract_zip {
     while (($n = $z->read($buf)) > 0) {
       $content .= $buf;
       return (undef, "file too large: $name")
-        if length($content) > MAX_FILE;
+        if !$unlimited && length($content) > MAX_FILE;
     }
     return (undef, 'corrupt zip data') if $n < 0;
 
     $total += length $content;
-    return (undef, 'bundle too large') if $total > MAX_TOTAL;
+    return (undef, 'bundle too large')
+      if !$unlimited && $total > MAX_TOTAL;
     push @raw, [$name, $content];
-    return (undef, 'too many files in bundle') if @raw > MAX_FILES;
+    return (undef, 'too many files in bundle')
+      if !$unlimited && @raw > MAX_FILES;
   }
   return (undef, 'corrupt zip file') if $status < 0;
   return (undef, 'zip contains no files') unless @raw;

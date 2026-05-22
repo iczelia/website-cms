@@ -81,8 +81,13 @@
       <input type="hidden" name="csrf" value="{{ csrf.rezip }}">
       <fieldset class="cms-field cms-field-text">
         <legend>bundle (.zip)</legend>
-        <input type="file" name="bundle" accept=".zip,application/zip" required>
+        <input type="file" name="bundle" accept=".zip,application/zip">
         <p class="cms-help">replaces every file in this subpage with the contents of the new zip.</p>
+      </fieldset>
+      <fieldset class="cms-field cms-field-text">
+        <legend>or import from a server path</legend>
+        <input type="text" name="zip_path" maxlength="1024" placeholder="/var/lib/iczelia/bundles/site.zip">
+        <p class="cms-help">absolute path to a .zip on the server. no size limit; use this for bundles too large to upload.</p>
       </fieldset>
       <p class="cms-actions"><button type="submit" class="cms-btn cms-btn-danger" onclick="return confirm('replace all files in this subpage?')">replace bundle</button></p>
     </form>

@@ -27,6 +27,7 @@ use Iczelia::Subpages;
 use Iczelia::Router;
 use Iczelia::Server;
 use Iczelia::Handlers::Subpages;
+use Iczelia::Handlers::Admin::Subpages;
 
 # Build an in-memory zip from { path => content }.
 sub make_zip {
@@ -232,6 +233,130 @@ is(
   301,
   'nested directory without slash redirects'
 );
+
+# 8. Precompressed siblings (brotli_static / gzip_static) for non-HTML.
+Iczelia::Subpages::put_file($db, $sid, 'app.js',    'BASE-JAVASCRIPT');
+Iczelia::Subpages::put_file($db, $sid, 'app.js.gz', 'PRETEND-GZIP-BYTES');
+
+my $g1 = Iczelia::Handlers::Subpages::serve(
+  $ctx,
+  { method  => 'GET', path => '/demo/app.js',
+    headers => {'accept-encoding' => 'gzip, deflate'} }
+);
+is($g1->{headers}{'Content-Encoding'}, 'gzip',
+  'gz sibling served when the client accepts gzip');
+is($g1->{body}, 'PRETEND-GZIP-BYTES', 'precompressed bytes served');
+is($g1->{headers}{'Content-Type'}, 'application/javascript; charset=utf-8',
+  'content-type is the base file type, not the .gz type');
+is($g1->{headers}{Vary}, 'Accept-Encoding', 'Vary: Accept-Encoding set');
+
+my $g2 = Iczelia::Handlers::Subpages::serve($ctx,
+  {method => 'GET', path => '/demo/app.js', headers => {}});
+is($g2->{headers}{'Content-Encoding'},
+  undef, 'no content-encoding when nothing is accepted');
+is($g2->{body}, 'BASE-JAVASCRIPT', 'uncompressed base file served instead');
+
+# Brotli is preferred over gzip when the client accepts it.
+Iczelia::Subpages::put_file($db, $sid, 'app.js.br', 'PRETEND-BROTLI-BYTES');
+my $b1 = Iczelia::Handlers::Subpages::serve(
+  $ctx,
+  { method  => 'GET', path => '/demo/app.js',
+    headers => {'accept-encoding' => 'gzip, deflate, br'} }
+);
+is($b1->{headers}{'Content-Encoding'}, 'br', 'br sibling preferred over gz');
+is($b1->{body}, 'PRETEND-BROTLI-BYTES', 'brotli bytes served');
+
+my $b2 = Iczelia::Handlers::Subpages::serve(
+  $ctx,
+  { method  => 'GET', path => '/demo/app.js',
+    headers => {'accept-encoding' => 'gzip'} }
+);
+is($b2->{headers}{'Content-Encoding'},
+  'gzip', 'gzip-only client still gets the .gz despite a .br sibling');
+
+# HTML is excluded even when a precompressed sibling exists.
+Iczelia::Subpages::put_file($db, $sid, 'page.html',    '<h1>real html</h1>');
+Iczelia::Subpages::put_file($db, $sid, 'page.html.br', 'HTML-BROTLI-BYTES');
+my $g3 = Iczelia::Handlers::Subpages::serve(
+  $ctx,
+  { method  => 'GET', path => '/demo/page.html',
+    headers => {'accept-encoding' => 'gzip, br'} }
+);
+is($g3->{headers}{'Content-Encoding'}, undef, 'html is not statically encoded');
+is($g3->{body}, '<h1>real html</h1>', 'html served uncompressed');
+
+# A .br-only asset with no uncompressed sibling.
+Iczelia::Subpages::put_file($db, $sid, 'data.bin.br', 'ONLY-BROTLI');
+is(
+  Iczelia::Handlers::Subpages::serve(
+    $ctx,
+    { method  => 'GET', path => '/demo/data.bin',
+      headers => {'accept-encoding' => 'br'} }
+  )->{body},
+  'ONLY-BROTLI',
+  'br-only asset served to a brotli client'
+);
+is(
+  Iczelia::Handlers::Subpages::serve(
+    $ctx,
+    { method  => 'GET', path => '/demo/data.bin',
+      headers => {'accept-encoding' => 'gzip'} }
+  )->{status},
+  404,
+  'br-only asset 404s a client that only accepts gzip'
+);
+
+# 9. _bundle_bytes: importing a .zip already on the server's filesystem.
+{
+  my $zipbytes = make_zip('index.html' => '<h1>imported</h1>');
+  my $zippath  = "$tmp/import.zip";
+  open my $zf, '>:raw', $zippath or die "write $zippath: $!";
+  print $zf $zipbytes;
+  close $zf;
+
+  my ($b, $e, $from_fs) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [], params => {zip_path => $zippath}});
+  is($e, undef, 'fs import: no error for a readable zip');
+  is($b, $zipbytes, 'fs import: returns the file bytes verbatim');
+  is($from_fs, 1, 'fs import: flagged as a filesystem import');
+  my ($ef) = Iczelia::Subpages::extract_zip($b);
+  is($ef->[0]{path}, 'index.html', 'fs-imported bytes extract correctly');
+
+  my (undef, $e2) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [], params => {zip_path => 'relative/path.zip'}});
+  ok($e2, 'fs import: a relative path is rejected');
+
+  my (undef, $e3) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [], params => {zip_path => "$tmp/does-not-exist.zip"}});
+  ok($e3, 'fs import: a missing file is rejected');
+
+  my (undef, $e4) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [], params => {zip_path => "$tmp"}});
+  ok($e4, 'fs import: a directory is rejected');
+
+  my ($b5, $e5) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [], params => {}});
+  ok(!defined $b5 && !defined $e5,
+    'fs import: nothing supplied yields (undef, undef)');
+
+  my ($b6, undef, $up_fs) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    {uploads => [{body => 'UPLOADED'}], params => {zip_path => $zippath}});
+  is($b6, 'UPLOADED', 'fs import: an uploaded file wins over the path');
+  ok(!$up_fs, 'fs import: an upload is not flagged as a filesystem import');
+}
+
+# 10. extract_zip: a filesystem import bypasses the bundle caps.
+{
+  my %many = map {("f$_.txt" => 'x')} 1 .. (Iczelia::Subpages::MAX_FILES + 1);
+  my $bigzip = make_zip(%many);
+  my (undef, $capped) = Iczelia::Subpages::extract_zip($bigzip);
+  ok($capped, 'extract_zip enforces the file-count cap by default');
+  my ($uncapped, $uerr) =
+    Iczelia::Subpages::extract_zip($bigzip, unlimited => 1);
+  is($uerr, undef, 'unlimited extract bypasses the cap');
+  is(scalar @$uncapped, Iczelia::Subpages::MAX_FILES + 1,
+    'unlimited extract keeps every file');
+}
 
 done_testing;
 

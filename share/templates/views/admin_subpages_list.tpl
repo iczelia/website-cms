@@ -42,8 +42,13 @@
       </fieldset>
       <fieldset class="cms-field cms-field-text">
         <legend>bundle (.zip)</legend>
-        <input type="file" name="bundle" accept=".zip,application/zip" required>
+        <input type="file" name="bundle" accept=".zip,application/zip">
         <p class="cms-help">a zip of HTML/CSS/JS/images; a single wrapping folder is unwrapped automatically.</p>
+      </fieldset>
+      <fieldset class="cms-field cms-field-text">
+        <legend>or import from a server path</legend>
+        <input type="text" name="zip_path" value="{{ zip_path_value }}" maxlength="1024" placeholder="/var/lib/iczelia/bundles/site.zip">
+        <p class="cms-help">absolute path to a .zip already on the server, read with the daemon's permissions. no size limit; use this for bundles too large to upload.</p>
       </fieldset>
       <p class="cms-actions">
         <button type="submit" class="cms-btn cms-btn-primary">create subpage</button>

@@ -47,6 +47,30 @@ sub serve {
   my $clean = Iczelia::Subpages::sanitize_rel_path($rel);
   return Iczelia::HTTP::error(404) unless defined $clean;
 
+  # Prefer a precompressed .br/.gz sibling (brotli_static / gzip_static).
+  # HTML is excluded so the daemon's minify pass never meets an encoded body.
+  my $ct = Iczelia::Subpages::content_type_for($clean);
+  if ($ct !~ m{^text/html\b}i) {
+    my $ae = $req->{headers}{'accept-encoding'} // '';
+    for my $cand (['br', '.br', qr/\bbr\b/i], ['gzip', '.gz', qr/\bgzip\b/i]) {
+      next unless $ae =~ $cand->[2];
+      my $pre =
+        Iczelia::Subpages::file($ctx->db, $sp->{id}, "$clean$cand->[1]");
+      next unless $pre;
+      return {
+        status  => 200,
+        headers => {
+          'Content-Type'     => $ct,
+          'Content-Encoding' => $cand->[0],
+          'Vary'             => 'Accept-Encoding',
+          'Cache-Control'    => 'no-cache',
+        },
+        body      => $pre->{content},
+        _no_cache => 1,
+      };
+    }
+  }
+
   my $file = Iczelia::Subpages::file($ctx->db, $sp->{id}, $clean);
   if (!$file && $rest !~ m{/\z}) {
     # A directory addressed without its trailing slash.

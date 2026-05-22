@@ -55,10 +55,11 @@ sub _render_list {
     $ctx, $req, 'admin_subpages_list.tpl',
     title       => 'static subpages',
     subpages    => $rows,
-    error       => $opt{error},
-    slug_value  => (defined $opt{slug}  ? $opt{slug}  : ''),
-    title_value => (defined $opt{title} ? $opt{title} : ''),
-    csrf_form   => $ctx->auth->csrf_token($sid, 'subpage:new'),
+    error          => $opt{error},
+    slug_value     => (defined $opt{slug}     ? $opt{slug}     : ''),
+    title_value    => (defined $opt{title}    ? $opt{title}    : ''),
+    zip_path_value => (defined $opt{zip_path} ? $opt{zip_path} : ''),
+    csrf_form      => $ctx->auth->csrf_token($sid, 'subpage:new'),
   );
 }
 
@@ -69,23 +70,27 @@ sub _create {
 
   my $slug  = _norm_slug($req->{params}{slug});
   my $title = defined $req->{params}{title} ? $req->{params}{title} : '';
+  my @form  = (
+    slug => $slug, title => $title,
+    zip_path => $req->{params}{zip_path},
+  );
 
-  return _render_list($ctx, $req, slug => $slug, title => $title,
+  return _render_list($ctx, $req, @form,
     error => 'invalid slug: use a-z, 0-9 and dashes, and avoid reserved names')
     unless Iczelia::Subpages::valid_slug($slug);
-  return _render_list($ctx, $req, slug => $slug, title => $title,
+  return _render_list($ctx, $req, @form,
     error => "the slug '$slug' is already in use")
     if _slug_taken($ctx, $slug, 0);
 
-  my $zip = _upload_body($req);
-  return _render_list($ctx, $req, slug => $slug, title => $title,
-    error => 'attach a .zip bundle to create a subpage')
+  my ($zip, $src_err, $from_fs) = _bundle_bytes($req);
+  return _render_list($ctx, $req, @form, error => $src_err) if $src_err;
+  return _render_list($ctx, $req, @form,
+    error => 'attach a .zip bundle or import one from a server path')
     unless defined $zip;
 
-  my ($files, $zerr) = Iczelia::Subpages::extract_zip($zip);
-  return _render_list($ctx, $req, slug => $slug, title => $title,
-    error => "zip: $zerr")
-    if $zerr;
+  my ($files, $zerr) =
+    Iczelia::Subpages::extract_zip($zip, unlimited => $from_fs);
+  return _render_list($ctx, $req, @form, error => "zip: $zerr") if $zerr;
 
   my $id = Iczelia::Subpages::create($ctx->db, $slug, $title, $files);
   return Iczelia::HTTP::redirect("/admin/subpages/$id/edit");
@@ -151,15 +156,17 @@ sub _rezip {
   my $err = $ctx->auth->require_csrf($req, "subpage:rezip:$id");
   return $err if $err;
 
-  my $zip = _upload_body($req);
-  return _render_edit($ctx, $req, error => 'attach a .zip bundle')
+  my ($zip, $src_err, $from_fs) = _bundle_bytes($req);
+  return _render_edit($ctx, $req, error => $src_err) if $src_err;
+  return _render_edit($ctx, $req,
+    error => 'attach a .zip bundle or import one from a server path')
     unless defined $zip;
-  my ($files, $zerr) = Iczelia::Subpages::extract_zip($zip);
+  my ($files, $zerr) =
+    Iczelia::Subpages::extract_zip($zip, unlimited => $from_fs);
   return _render_edit($ctx, $req, error => "zip: $zerr") if $zerr;
 
   Iczelia::Subpages::replace_files($ctx->db, $id, $files);
-  return _render_edit($ctx, $req,
-    notice => 'bundle replaced from the uploaded zip');
+  return _render_edit($ctx, $req, notice => 'bundle replaced');
 }
 
 sub _delete {
@@ -270,11 +277,36 @@ sub _slug_taken {
   return 0;
 }
 
-sub _upload_body {
+# Bundle bytes for create / rezip: an uploaded file, or a .zip on the
+# server's filesystem. Returns ($bytes, $error, $from_fs); a filesystem
+# import is uncapped, so $from_fs drives the extract_zip limit bypass.
+sub _bundle_bytes {
   my ($req) = @_;
+
   my @up = @{$req->{uploads} || []};
-  return undef unless @up && defined $up[0]{body} && length $up[0]{body};
-  return $up[0]{body};
+  return ($up[0]{body}, undef, 0)
+    if @up && defined $up[0]{body} && length $up[0]{body};
+
+  my $path = $req->{params}{zip_path};
+  return (undef, undef, 0) unless defined $path && $path =~ /\S/;
+  $path =~ s/^\s+//;
+  $path =~ s/\s+$//;
+
+  return (undef, 'the server path must be absolute')
+    unless $path =~ m{^/} && $path !~ /\0/;
+  return (undef, "no file at $path")              unless -e $path;
+  return (undef, 'the server path is not a file') unless -f _;
+  return (undef, 'the server file is not readable by the daemon')
+    unless -r _;
+
+  open my $fh, '<:raw', $path
+    or return (undef, 'could not open the server file');
+  local $/;
+  my $data = <$fh>;
+  close $fh;
+  return (undef, 'the server file is empty')
+    unless defined $data && length $data;
+  return ($data, undef, 1);
 }
 
 sub _fmt_size {
