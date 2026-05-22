@@ -46,10 +46,12 @@ sub render_home {
   $self->_home_collapse_github($by_src);
   my $github_compact = @{$by_src->{github}} ? [$by_src->{github}[0]] : [];
 
+  my $teaser = $self->_home_load_blog_teaser;
+
   my $vars = $self->base_vars(
     title => $page->{title},
     page  => {is_home => 1},
-    meta  => {canonical => '/'},
+    meta  => {canonical => '/', description => $self->_home_meta_desc($teaser)},
     data  => {
       profile_html => $profile_html,
       currently    => $currently,
@@ -61,11 +63,25 @@ sub render_home {
       bluesky        => $by_src->{bluesky},
       github_compact => $github_compact,
     },
-    blog_teaser => $self->_home_load_blog_teaser,
+    blog_teaser => $teaser,
     clock       => clock_string(),
     home_css    => $self->_home_css,
   );
   return $self->{template}->render('views/home.tpl', $vars);
+}
+
+# Search-result / social description for the home page: site identity
+# plus the newest published blog post.
+sub _home_meta_desc {
+  my ($self, $teaser) = @_;
+  $self->_refresh_settings;
+  my $s      = $self->{_settings_cache}{site} || {};
+  my $author = $s->{author} || 'Kamila Szewczyk';
+  my $handle = $s->{title}  || 'iczelia';
+  my $desc   = "The homepage of $author ($handle).";
+  $desc .= " Newest blog post: $teaser->{title}, $teaser->{date_fmt}."
+    if $teaser;
+  return $desc;
 }
 
 sub _home_load_page_data {

@@ -45,6 +45,11 @@ like($home, qr{class="nav-box"},                              'home nav');
 like($home, qr{:: updates ::},         'home updates pane');
 like($home, qr{:: recent activity ::}, 'home activity pane');
 like($home, qr{class="clock"},         'home clock');
+like(
+  $home,
+  qr{<meta name="description" content="The homepage of Kamila Szewczyk \(iczelia\)\.">},
+  'home meta description, no blog post yet'
+);
 
 # 2: About renders chrome.
 my $about = $r->render_page('about');
@@ -82,6 +87,11 @@ like($home2, qr{writing about monads},       'home shows currently');
 like($home2, qr{04\.21\.2026},               'home shows update date');
 like($home2, qr{A monad is a monoid},        'home shows update body');
 like($home2, qr{hello world},                'home shows blog teaser');
+like(
+  $home2,
+  qr{<meta name="description" content="The homepage of Kamila Szewczyk \(iczelia\)\. Newest blog post: hello world, 04\.20\.2026\.">},
+  'home meta description names the newest blog post'
+);
 
 # 4: Cache works: edit body, html stays unchanged unless invalidated.
 my $cached = $r->render_home;
