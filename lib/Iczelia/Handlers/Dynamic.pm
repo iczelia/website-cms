@@ -30,6 +30,16 @@ sub lookup {
   return undef unless $path =~ m{^/[a-z0-9]};
   my $row =
     $ctx->db->row('SELECT 1 FROM dynamic_pages WHERE route=?', $path);
+  if (!$row && $path !~ m{/\z}) {
+    my $slashed =
+      $ctx->db->row('SELECT 1 FROM dynamic_pages WHERE route=?', "$path/");
+    if ($slashed) {
+      my $to = "$path/";
+      $to .= '?' . $req->{query}
+        if defined $req->{query} && length $req->{query};
+      return Iczelia::HTTP::redirect($to, status => 301);
+    }
+  }
   return undef unless $row;
   my $html = $ctx->render->render_dynamic($path);
   return undef unless defined $html;

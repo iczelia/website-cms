@@ -404,11 +404,13 @@ sub _dispatch {
         $resp = Iczelia::HTTP::error(405);
       }
       else {
-        # Let admin-defined dynamic pages claim the path before 404.
+        # Admin-defined dynamic pages / static subpages claim the path
+        # first; then canonicalise a missing trailing slash.
         $resp =
             $self->{dynamic_lookup}
           ? $self->{dynamic_lookup}->($req)
           : undef;
+        $resp ||= $self->_slash_redirect($req);
         $resp ||= Iczelia::HTTP::error(404);
       }
     }
@@ -422,6 +424,22 @@ sub _dispatch {
     $resp = Iczelia::HTTP::error(500);
   };
   return $resp || Iczelia::HTTP::error(500, 'no response');
+}
+
+# If /foo has no route but /foo/ does, 301 to the slashed form.
+# GET/HEAD only; the query string is carried over.
+sub _slash_redirect {
+  my ($self, $req) = @_;
+  return undef unless $self->{router};
+  my $m = $req->{method} || 'GET';
+  return undef unless $m eq 'GET' || $m eq 'HEAD';
+  my $path = $req->{path};
+  return undef unless defined $path && length $path && $path !~ m{/\z};
+  my ($h) = $self->{router}->match('GET', "$path/");
+  return undef unless $h;
+  my $to = "$path/";
+  $to .= '?' . $req->{query} if defined $req->{query} && length $req->{query};
+  return Iczelia::HTTP::redirect($to, status => 301);
 }
 
 # Themify plain-text 404s; HTML 404s came from a handler that already

@@ -40,6 +40,7 @@ use Iczelia::Handlers::OG;
 use Iczelia::Handlers::Static;
 use Iczelia::Handlers::Honeypot;
 use Iczelia::Handlers::Dynamic;
+use Iczelia::Handlers::Subpages;
 use Iczelia::Handlers::Analytics;
 use Iczelia::Handlers::Backup;
 use File::Path qw(make_path);
@@ -107,7 +108,13 @@ sub build {
   Iczelia::Handlers::Analytics->register($router, $ctx);
   Iczelia::Handlers::Backup->register($router, $ctx);
 
-  my $dynamic_lookup = sub {Iczelia::Handlers::Dynamic::lookup($ctx, @_)};
+  # Tried in order before a 404: admin-defined dynamic pages, then
+  # static subpage bundles.
+  my $dynamic_lookup = sub {
+    my ($req) = @_;
+    return Iczelia::Handlers::Dynamic::lookup($ctx, $req)
+      || Iczelia::Handlers::Subpages::serve($ctx, $req);
+  };
 
   my $not_found = sub {
     my ($req) = @_;

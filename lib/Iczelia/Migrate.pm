@@ -20,11 +20,11 @@ use warnings;
 
 # Idempotent schema migrations.
 #
-# Wholly-new tables/indices land in share/schema.sql under the
-# CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS guards;
-# fresh installs pick those up automatically. This module handles the
-# OTHER half: ALTER-shape changes (added columns, renamed columns)
-# that pre-existing tables need patched in on upgrade.
+# New tables/indices are defined in share/schema.sql under the
+# CREATE ... IF NOT EXISTS guards; fresh installs pick those up. A
+# restart-only upgrade does not re-run the schema file, so anything a
+# running daemon needs (new tables, added or renamed columns) also gets
+# an idempotent migration here.
 #
 # Each migration record carries:
 #   version  the release pair it bridges, e.g. '0.1.0 -> 0.1.1'.
@@ -82,6 +82,59 @@ my @MIGRATIONS = (
       $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN os TEXT');
       $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN device TEXT');
       $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN bot_ua TEXT');
+    },
+  },
+
+  # 0.1.2 -> 0.1.3: UA breakdown roll-up table.
+  {
+    version => '0.1.2 -> 0.1.3',
+    name    => 'analytics_ua table',
+    check   => sub {_table_exists($_[0], 'analytics_ua')},
+    apply   => sub {
+      $_[0]->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS analytics_ua (
+            date  TEXT    NOT NULL,
+            kind  TEXT    NOT NULL,
+            label TEXT    NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (date, kind, label)
+          )}
+      );
+    },
+  },
+
+  # 0.1.3 -> 0.1.4: static subpages (uploaded HTML/CSS/JS bundles).
+  {
+    version => '0.1.3 -> 0.1.4',
+    name    => 'subpages + subpage_files tables',
+    check   => sub {_table_exists($_[0], 'subpages')},
+    apply   => sub {
+      my ($db) = @_;
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS subpages (
+            id         INTEGER PRIMARY KEY,
+            slug       TEXT    NOT NULL UNIQUE,
+            title      TEXT    NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )}
+      );
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS subpage_files (
+            id           INTEGER PRIMARY KEY,
+            subpage_id   INTEGER NOT NULL
+                         REFERENCES subpages(id) ON DELETE CASCADE,
+            path         TEXT    NOT NULL,
+            content      BLOB    NOT NULL,
+            content_type TEXT    NOT NULL,
+            size         INTEGER NOT NULL,
+            is_binary    INTEGER NOT NULL DEFAULT 0,
+            updated_at   INTEGER NOT NULL,
+            UNIQUE (subpage_id, path)
+          )}
+      );
+      $db->dbh->do('CREATE INDEX IF NOT EXISTS subpage_files_pid'
+        . ' ON subpage_files(subpage_id)');
     },
   },
 );

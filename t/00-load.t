@@ -28,6 +28,7 @@ my @mods = qw(
   Iczelia::SelfUpdate
   Iczelia::UA
   Iczelia::Analytics
+  Iczelia::Subpages
 );
 
 plan tests => scalar @mods;

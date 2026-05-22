@@ -407,3 +407,37 @@ a:hover { text-decoration: underline }
   /* hint that these are colour fields by setting type-ish width */
   font-family: ui-monospace, monospace;
 }
+
+/* static subpages */
+.cms-subpage-section {
+  margin: 1.75rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e2e2;
+}
+.cms-subpage-section h2 { margin: 0 0 0.6rem }
+.cms-subpage-notice {
+  color: #2f6f3f; background: #f0f8f1; border-left: 3px solid #4a9a6a;
+  padding: 0.4rem 0.8rem; margin: 0.5rem 0;
+}
+.cms-subpage-files td { vertical-align: middle }
+.cms-subpage-fileactions {
+  display: flex; gap: 0.3rem; align-items: center; white-space: nowrap;
+}
+.cms-subpage-fileactions .cms-inline-form { display: inline }
+.cms-subpage-editbar {
+  display: flex; gap: 0.5rem; align-items: center;
+  flex-wrap: wrap; margin: 0.5rem 0;
+}
+.cms-subpage-editbar #cms-subpage-path {
+  flex: 1; min-width: 220px; padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc; font-family: ui-monospace, monospace;
+}
+.cms-subpage-textarea {
+  width: 100%; height: 440px; box-sizing: border-box;
+  border: 1px solid #ccc; padding: 0.5rem;
+  font-family: ui-monospace, monospace; font-size: 13px;
+}
+.cms-subpage-status { font-size: 12px; color: #888 }
+.cms-subpage-status-ok  { color: #2f6f3f }
+.cms-subpage-status-err { color: #c44 }
+.cms-subpage-edit .CodeMirror { border: 1px solid #ccc; height: 440px }

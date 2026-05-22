@@ -79,6 +79,8 @@ sub register {
   $router->get('/cms.js',  sub {_serve_safe($r_share_web, "cms.js")});
   $router->get('/cms-analytics.js',
     sub {_serve_safe($r_share_web, "cms-analytics.js")});
+  $router->get('/cms-subpages.js',
+    sub {_serve_safe($r_share_web, "cms-subpages.js")});
   $router->get(
     '/vendor/*rest',
     sub {

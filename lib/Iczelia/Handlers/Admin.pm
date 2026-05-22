@@ -30,6 +30,7 @@ use Iczelia::Handlers::Admin::PGP       ();
 use Iczelia::Handlers::Admin::Posts     ();
 use Iczelia::Handlers::Admin::Series    ();
 use Iczelia::Handlers::Admin::Settings  ();
+use Iczelia::Handlers::Admin::Subpages  ();
 use Iczelia::Handlers::Admin::Webring   ();
 
 use constant DASHBOARD_POSTS_LIMIT => 50;
@@ -60,6 +61,7 @@ sub register {
     sub {gate(\&_search_rebuild, $ctx, $_[0])});
 
   Iczelia::Handlers::Admin::Dynamic->register($router, $ctx);
+  Iczelia::Handlers::Admin::Subpages->register($router, $ctx);
   Iczelia::Handlers::Admin::Highlight->register($router, $ctx);
 }
 

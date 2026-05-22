@@ -153,6 +153,29 @@ CREATE TABLE IF NOT EXISTS dynamic_pages (
 );
 CREATE INDEX IF NOT EXISTS dynamic_pages_route ON dynamic_pages(route);
 
+-- Static subpages: admin-uploaded HTML/CSS/JS bundles mounted under
+-- /<slug>/. subpage_files holds the bundle, one row per file; index.html
+-- is served for a directory request.
+CREATE TABLE IF NOT EXISTS subpages (
+  id         INTEGER PRIMARY KEY,
+  slug       TEXT    NOT NULL UNIQUE,
+  title      TEXT    NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS subpage_files (
+  id           INTEGER PRIMARY KEY,
+  subpage_id   INTEGER NOT NULL REFERENCES subpages(id) ON DELETE CASCADE,
+  path         TEXT    NOT NULL,
+  content      BLOB    NOT NULL,
+  content_type TEXT    NOT NULL,
+  size         INTEGER NOT NULL,
+  is_binary    INTEGER NOT NULL DEFAULT 0,
+  updated_at   INTEGER NOT NULL,
+  UNIQUE (subpage_id, path)
+);
+CREATE INDEX IF NOT EXISTS subpage_files_pid ON subpage_files(subpage_id);
+
 -- Admin-defined highlighter languages. Word-list-only definitions; the
 -- runtime quotemetas every token before building regex rules.
 CREATE TABLE IF NOT EXISTS highlight_langs (

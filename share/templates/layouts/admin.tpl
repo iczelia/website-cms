@@ -24,6 +24,7 @@
     <a href="/admin/webring/">webring</a>
     <a href="/admin/guestbook/">guestbook{% if pending_count %} ({{ pending_count }}){% endif %}</a>
     <a href="/admin/media/">media</a>
+    <a href="/admin/subpages/">subpages</a>
     <a href="/admin/pgp/">pgp</a>
     <a href="/admin/settings/">settings</a>
     <form class="cms-logout" method="POST" action="/admin/logout">
