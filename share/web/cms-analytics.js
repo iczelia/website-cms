@@ -138,9 +138,9 @@
     var wrap = el('section', { class: 'cms-anal-cards' });
     defs.forEach(function (c) {
       wrap.appendChild(el('div', { class: 'cms-anal-card' }, [
-        el('strong', { text: c[1] }),
         el('span', { class: 'cms-anal-card-lbl', text: c[0] }),
-        c[2] ? el('span', { class: 'cms-anal-card-sub', text: c[2] }) : null
+        el('strong', { text: c[1] }),
+        el('span', { class: 'cms-anal-card-sub', text: c[2] || ' ' })
       ]));
     });
     return wrap;
@@ -284,7 +284,11 @@
     var tbody = el('tbody');
     rows.forEach(function (r) {
       tbody.appendChild(el('tr', null, [
-        el('td', null, [el('code', { text: r.path })]),
+        el('td', null, [
+          el('a', { href: r.path, target: '_blank', rel: 'noopener' }, [
+            el('code', { text: r.path })
+          ])
+        ]),
         el('td', { text: fmt(r.views) }),
         el('td', { text: fmt(r.uniques) }),
         el('td', { text: fmt(r.bots) })
@@ -305,22 +309,29 @@
       total += num(r.count);
     });
     var list = el('div', { class: 'cms-barlist' });
+    var pending = [];
     rows.forEach(function (r) {
       var c = num(r.count);
       var label = r[labelKey];
       if (label == null || label === '') label = '(none)';
+      var target = (c / max * 100).toFixed(1) + '%';
+      var fill = el('span', {
+        class: 'cms-barlist-fill' + (opts.fillClass ? ' ' + opts.fillClass : ''),
+        style: 'width:0%'
+      });
+      pending.push([fill, target]);
       var row = el('div', { class: 'cms-barlist-row' });
       row.appendChild(el('span', { class: 'cms-barlist-label', title: label, text: label }));
-      var track = el('span', { class: 'cms-barlist-track' }, [
-        el('span', {
-          class: 'cms-barlist-fill' + (opts.fillClass ? ' ' + opts.fillClass : ''),
-          style: 'width:' + (c / max * 100).toFixed(1) + '%'
-        })
-      ]);
-      row.appendChild(track);
+      row.appendChild(el('span', { class: 'cms-barlist-track' }, [fill]));
       row.appendChild(el('span', { class: 'cms-barlist-count', text: fmt(c) }));
-      row.appendChild(el('span', { class: 'cms-barlist-pct', text: pct(c, total) }));
+      row.appendChild(el('span', { class: 'cms-barlist-pct',  text: pct(c, total) }));
       list.appendChild(row);
+    });
+    // Double-rAF: paint with width:0, then animate to target.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        pending.forEach(function (p) { p[0].style.width = p[1]; });
+      });
     });
     return list;
   }

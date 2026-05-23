@@ -299,92 +299,225 @@ a:hover { text-decoration: underline }
 }
 
 /* analytics dashboard */
-.cms-anal-block { margin: 1.75rem 0 }
-.cms-anal-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 1rem; flex-wrap: wrap;
+.cms-anal-loading {
+  color: #888; font-style: italic; padding: 1.5rem 0;
+  text-align: center;
 }
-.cms-anal-head h2 { margin: 0 }
-.cms-anal-empty, .cms-anal-loading { color: #999; font-style: italic; padding: 0.5rem 0 }
-.cms-anal-note { font-size: 11px; color: #999; margin: 0.4rem 0 0 }
+.cms-anal-empty {
+  color: #888; font-style: italic;
+  padding: 1rem; margin: 0.6rem 0; text-align: center;
+  background: #fafbfc; border: 1px dashed #d8dde3; border-radius: 4px;
+}
+.cms-anal-note {
+  font-size: 11px; color: #999; margin: 0.6rem 0 0;
+  font-style: italic;
+}
+
+.cms-anal-block { margin: 1.75rem 0 }
+.cms-anal-block > h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem; font-weight: 600; color: #2b2f33;
+  letter-spacing: 0.02em;
+}
+.cms-anal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin: 0 0 0.6rem;
+}
+.cms-anal-head h2 {
+  margin: 0;
+  font-size: 1rem; font-weight: 600; color: #2b2f33;
+  letter-spacing: 0.02em;
+}
 
 .cms-anal-controls {
-  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-  font-size: 13px; color: #555; margin: 0.75rem 0;
+  display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
+  background: #f6f7f9; border: 1px solid #e3e5e8; border-radius: 5px;
+  padding: 0.6rem 0.85rem; margin: 1rem 0 1.25rem;
+  font-size: 13px; color: #555;
 }
-.cms-anal-ctl { display: flex; align-items: center; gap: 0.4rem }
-.cms-anal-lbl { color: #888 }
-.cms-anal-ctl-right { display: flex; align-items: center; gap: 0.8rem; margin-left: auto }
-.cms-anal-stamp { color: #999; font-size: 12px }
-.cms-anal-check { display: flex; align-items: center; cursor: pointer }
+.cms-anal-ctl { display: flex; align-items: center; gap: 0.5rem }
+.cms-anal-lbl {
+  color: #6b7177; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.cms-anal-ctl-right {
+  display: flex; align-items: center; gap: 0.85rem;
+  margin-left: auto;
+}
+.cms-anal-stamp { color: #888; font-size: 12px }
+.cms-anal-rawlink {
+  color: #4a6da7; font-size: 12px; text-decoration: none;
+}
+.cms-anal-rawlink:hover { text-decoration: underline }
+.cms-anal-check {
+  display: flex; align-items: center; gap: 0.4rem;
+  cursor: pointer; font-size: 12px; color: #555;
+  user-select: none;
+}
+.cms-anal-check input { margin: 0 }
 
-.cms-anal-segctl { display: inline-flex }
-.cms-seg {
-  font: inherit; font-size: 12px; padding: 0.2rem 0.6rem;
-  border: 1px solid #ccc; background: #fff; color: #555; cursor: pointer;
+.cms-anal-segctl {
+  display: inline-flex;
+  border: 1px solid #c8cdd3; border-radius: 4px; overflow: hidden;
+  background: #fff;
 }
-.cms-anal-segctl .cms-seg { border-right-width: 0 }
-.cms-anal-segctl .cms-seg:last-child { border-right-width: 1px }
-.cms-seg:hover { background: #f0f0f0 }
-.cms-seg-on, .cms-seg-on:hover { background: #4a6da7; color: #fff; border-color: #4a6da7 }
+.cms-seg {
+  font: inherit; font-size: 12px; padding: 0.3rem 0.85rem;
+  background: #fff; color: #444; cursor: pointer;
+  border: 1px solid transparent; line-height: 1.3;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cms-anal-segctl .cms-seg {
+  border: 0; border-right: 1px solid #e3e5e8;
+}
+.cms-anal-segctl .cms-seg:last-child { border-right: 0 }
+.cms-seg:hover { background: #eef1f5; color: #1f242a }
+.cms-seg-on, .cms-seg-on:hover {
+  background: #4a6da7; color: #fff;
+}
+.cms-anal-controls > .cms-seg,
+.cms-anal-ctl-right > .cms-seg,
+.cms-error .cms-seg {
+  border: 1px solid #c8cdd3; border-radius: 3px;
+}
 
 .cms-anal-cards {
-  display: grid; gap: 0.75rem; margin: 1rem 0;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: grid; gap: 0.75rem; margin: 1rem 0 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 .cms-anal-card {
-  background: #f6f6f6; border: 1px solid #ddd; border-radius: 3px;
-  padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 2px;
+  background: #fff; border: 1px solid #e3e5e8; border-radius: 5px;
+  padding: 0.75rem 0.95rem;
+  display: flex; flex-direction: column; gap: 0.15rem;
+  position: relative; overflow: hidden;
 }
-.cms-anal-card strong { font-size: 1.5rem; color: #333; line-height: 1.1 }
-.cms-anal-card-lbl { font-size: 12px; color: #666 }
-.cms-anal-card-sub { font-size: 11px; color: #999 }
+.cms-anal-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: #4a6da7;
+}
+.cms-anal-card:nth-child(2)::before { background: #3f8f6f }
+.cms-anal-card:nth-child(3)::before { background: #c79a3a }
+.cms-anal-card:nth-child(4)::before { background: #b3704a }
+.cms-anal-card strong {
+  font-size: 1.65rem; color: #1f242a; line-height: 1.1;
+  font-variant-numeric: tabular-nums; margin: 0.05rem 0 0.1rem;
+}
+.cms-anal-card-lbl {
+  font-size: 11px; color: #6b7177;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.cms-anal-card-sub { font-size: 11px; color: #9aa0a6; min-height: 1em }
 
 .cms-chart-box {
-  position: relative; height: 280px; margin-top: 0.6rem;
-  background: #fafafa; border: 1px solid #ddd; border-radius: 3px;
+  position: relative; height: 320px; margin-top: 0.4rem;
+  background: #fff; border: 1px solid #e3e5e8; border-radius: 5px;
+  padding: 0.5rem;
 }
 .cms-chart { width: 100%; height: 100%; display: block }
-.cms-chart-grid { stroke: #e6e6e6; stroke-width: 1 }
-.cms-chart-axis { fill: #999; font-size: 10px }
-.cms-chart-bar { fill: #4a6da7 }
+.cms-chart-grid { stroke: #eef0f3; stroke-width: 1; stroke-dasharray: 2 3 }
+.cms-chart-axis { fill: #8a8f96; font-size: 10px }
+.cms-chart-bar {
+  fill: #4a6da7; cursor: pointer;
+  transition: fill-opacity 0.12s ease;
+}
 .cms-chart-bar-uniques { fill: #3f8f6f }
-.cms-chart-bar-bots { fill: #b3704a }
-.cms-chart-bar-on { fill-opacity: 0.6 }
+.cms-chart-bar-bots    { fill: #b3704a }
+.cms-chart-bar-on      { fill-opacity: 0.72 }
 .cms-chart-tip {
   position: absolute; display: none; pointer-events: none; z-index: 5;
-  background: #222; color: #fff; padding: 0.4rem 0.55rem; border-radius: 3px;
+  background: #1f242a; color: #fff;
+  padding: 0.5rem 0.65rem; border-radius: 4px;
   font-size: 11px; line-height: 1.5; white-space: nowrap;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
-.cms-chart-tip strong { display: block; margin-bottom: 2px }
-.cms-chart-tip span { display: block }
+.cms-chart-tip strong {
+  display: block; margin-bottom: 3px; font-size: 12px;
+}
+.cms-chart-tip span { display: block; color: #c8cdd3 }
 
-.cms-anal-table th.cms-sortable { cursor: pointer; user-select: none; white-space: nowrap }
-.cms-anal-table th.cms-sortable:hover { background: #e9e9e9 }
-.cms-anal-table td { font-variant-numeric: tabular-nums }
+.cms-anal-table { margin-top: 0.35rem }
+.cms-anal-table thead th {
+  background: #f3f4f6; color: #555;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid #d8dde3;
+}
+.cms-anal-table th.cms-sortable {
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cms-anal-table th.cms-sortable:hover { background: #e8ebef; color: #1f242a }
+.cms-anal-table th.cms-sort-asc,
+.cms-anal-table th.cms-sort-desc { color: #4a6da7; background: #eef2f7 }
+.cms-anal-table tbody tr { transition: background 0.1s ease }
+.cms-anal-table tbody tr:hover { background: #f7f8fa }
+.cms-anal-table td {
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.cms-anal-table thead th:nth-child(n+2),
+.cms-anal-table td:nth-child(n+2) {
+  text-align: right; padding-right: 1rem;
+}
+.cms-anal-table td a {
+  color: #2b2f33; text-decoration: none;
+}
+.cms-anal-table td a:hover { color: #4a6da7; text-decoration: underline }
+.cms-anal-table td code { font-size: 12px; color: inherit }
 
-.cms-barlist { display: flex; flex-direction: column; gap: 3px; margin-top: 0.5rem }
-.cms-barlist-row { display: flex; align-items: center; gap: 8px; font-size: 13px }
+.cms-barlist {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 0.5rem;
+}
+.cms-barlist-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; padding: 2px 0;
+  transition: background 0.1s ease;
+}
+.cms-barlist-row:hover { background: #f7f8fa }
 .cms-barlist-label {
-  flex: 0 0 200px; color: #444;
+  flex: 0 0 200px; color: #2b2f33; font-size: 12px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cms-barlist-track {
-  flex: 1; height: 14px; background: #eee; border-radius: 2px; overflow: hidden;
+  flex: 1; height: 18px; min-width: 60px;
+  background: #f0f1f3; border-radius: 3px; overflow: hidden;
 }
-.cms-barlist-fill { display: block; height: 100%; background: #4a6da7 }
-.cms-barlist-count { flex: 0 0 64px; text-align: right; font-variant-numeric: tabular-nums }
-.cms-barlist-pct { flex: 0 0 50px; text-align: right; color: #999; font-size: 12px }
-.cms-fill-ref { background: #7a6aa7 }
+.cms-barlist-fill {
+  display: block; height: 100%;
+  background: #4a6da7;
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cms-barlist-count {
+  flex: 0 0 64px; text-align: right;
+  font-variant-numeric: tabular-nums; font-size: 12px; color: #2b2f33;
+}
+.cms-barlist-pct {
+  flex: 0 0 54px; text-align: right;
+  font-size: 11px; color: #8a8f96;
+}
+.cms-fill-ref      { background: #7a6aa7 }
 .cms-fill-browsers { background: #4a6da7 }
-.cms-fill-os { background: #3f8f6f }
-.cms-fill-devices { background: #c79a3a }
-.cms-fill-bots { background: #b3704a }
+.cms-fill-os       { background: #3f8f6f }
+.cms-fill-devices  { background: #c79a3a }
+.cms-fill-bots     { background: #b3704a }
 
 .cms-anal-ua {
   max-width: 280px; font-size: 12px; color: #666;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .cms-anal-cards { grid-template-columns: 1fr 1fr }
+  .cms-anal-card strong { font-size: 1.4rem }
+  .cms-barlist-label { flex: 0 0 130px }
+  .cms-anal-controls { gap: 0.75rem }
+  .cms-anal-ctl-right { margin-left: 0; width: 100% }
+}
+@media (max-width: 480px) {
+  .cms-anal-cards { grid-template-columns: 1fr }
+  .cms-barlist-label { flex: 0 0 90px; font-size: 11px }
+  .cms-barlist-pct { display: none }
+  .cms-chart-box { height: 240px }
 }
 .cms-aliases { list-style: none; padding: 0.4rem 0; margin: 0; font-size: 12px }
 .cms-aliases li { margin: 0.2rem 0 }
