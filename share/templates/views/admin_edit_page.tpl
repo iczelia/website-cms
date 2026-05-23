@@ -3,7 +3,7 @@
 <article class="cms-edit">
   <header class="cms-edit-head">
     <h1>edit page: {{ page.slug }}</h1>
-    <p class="cms-meta">template: <code>{{ page.template }}</code> &middot; last edited {{ page.updated_fmt }}</p>
+    <p class="cms-meta">template: <code>{{ page.template }}</code> | last edited {{ page.updated_fmt }}</p>
   </header>
 
   <form class="cms-form" method="POST" action="/admin/edit/{{ page.slug }}">

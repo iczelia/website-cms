@@ -18,7 +18,7 @@
 # This is run via exec() from the admin "rebuild caches" handler. The
 # exec is what lets us reach for SQLite at all: the request worker that
 # triggered the rebuild has an open DBD::SQLite handle, and libsqlite
-# is not fork-safe — opening a fresh connection from a forked child
+# is not fork-safe -- opening a fresh connection from a forked child
 # of that worker aborts the process via libsqlite assertion. By
 # exec()ing into a clean perl we drop every byte of inherited libsqlite
 # state.

@@ -334,11 +334,53 @@ sub delete_file {
 }
 
 sub update_meta {
-  my ($db, $id, $slug, $title) = @_;
+  my ($db, $id, $slug, $title, $listing) = @_;
   $db->do_(
-    'UPDATE subpages SET slug=?, title=?, updated_at=? WHERE id=?',
-    $slug, (defined $title ? $title : ''), time, $id
+    'UPDATE subpages SET slug=?, title=?, listing=?, updated_at=? WHERE id=?',
+    $slug, (defined $title ? $title : ''),
+    ($listing ? 1 : 0), time, $id
   );
+}
+
+# Immediate children of $dir (relative to the bundle root). Returns an
+# arrayref of { type => 'dir'|'file', name, updated_at, size? } with
+# directories first, both groups alphabetical. $dir may be '' (root),
+# 'css', 'css/sub', etc.
+sub directory_entries {
+  my ($db, $id, $dir) = @_;
+  $dir = '' unless defined $dir;
+  $dir =~ s{^/+}{};
+  $dir =~ s{/+$}{};
+  my $prefix = length($dir) ? "$dir/" : '';
+  my $rows = $db->all(
+    q{SELECT path, size, updated_at FROM subpage_files
+        WHERE subpage_id=? ORDER BY path}, $id
+  );
+  my (%dirs, @files);
+  for my $r (@$rows) {
+    next unless index($r->{path}, $prefix) == 0;
+    my $rest = substr($r->{path}, length $prefix);
+    next if $rest eq '';
+    if ($rest =~ m{^([^/]+)/}) {
+      my $name = $1;
+      $dirs{$name} = $r->{updated_at}
+        if !exists $dirs{$name} || $r->{updated_at} > $dirs{$name};
+    }
+    else {
+      push @files,
+        {
+        type       => 'file',
+        name       => $rest,
+        size       => $r->{size},
+        updated_at => $r->{updated_at},
+        path       => $r->{path},
+        };
+    }
+  }
+  my @out = map { {type => 'dir', name => $_, updated_at => $dirs{$_}} }
+    sort keys %dirs;
+  push @out, sort { $a->{name} cmp $b->{name} } @files;
+  return \@out;
 }
 
 sub delete {

@@ -9,7 +9,7 @@
 {% if pending %}{% for e in pending %}  <article class="gb-mod-entry gb-mod-pending">
     <header class="gb-mod-meta">
       <strong>{{ e.nickname }}</strong>
-      <span class="cms-meta">{{ e.date_fmt }} &middot; {{ e.ip }}</span>
+      <span class="cms-meta">{{ e.date_fmt }} | {{ e.ip }}</span>
     </header>
     <div class="gb-mod-preview">{{{ e.preview_html }}}</div>
     <div class="gb-mod-actions">

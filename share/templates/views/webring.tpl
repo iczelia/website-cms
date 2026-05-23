@@ -9,7 +9,7 @@
     <div class="ab-rule"></div>
 
 {% for s in ring_sections %}    <section class="ab-section">
-      <h2 class="ab-h2">&raquo; {{ s.label }}</h2>
+      <h2 class="ab-h2">>> {{ s.label }}</h2>
 {% if s.is_more %}      <div class="ab-ring-buttons">
 {% for m in s.members %}{% if m.url %}        <a href="{{ m.url }}" rel="noopener" title="{{ m.name }}"><img src="{{ m.image_url }}" alt="{{ m.name }}" width="88" height="31"></a>
 {% else %}        <img src="{{ m.image_url }}" alt="{{ m.name }}" title="{{ m.name }}" width="88" height="31">

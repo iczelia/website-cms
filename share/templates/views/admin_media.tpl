@@ -16,7 +16,7 @@
       <a href="{{ m.url }}" target="_blank" rel="noopener"><img src="{{ m.thumb_url }}" alt="{{ m.orig_name }}"></a>
       <figcaption>
         <code class="cms-media-url">{{ m.url }}</code><br>
-        <span class="cms-meta">{{ m.size_kb }} KB &middot; {{ m.date_fmt }}</span><br>
+        <span class="cms-meta">{{ m.size_kb }} KB | {{ m.date_fmt }}</span><br>
         <form method="POST" action="/admin/media/{{ m.id }}/delete" class="cms-inline-form" onsubmit="return confirm('delete?')">
           <input type="hidden" name="csrf" value="{{ m.csrf_del }}">
           <button type="submit" class="cms-btn cms-btn-danger">delete</button>

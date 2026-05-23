@@ -91,7 +91,7 @@
       ['link',   function () { insertLink(cm); }],
       ['$',      function () { wrap(cm, '$', '$'); }],
       ['$$',     function () { wrap(cm, '\n$$\n', '\n$$\n'); }],
-      ['•',      function () { lineCmd(cm, '- '); }],
+      ['*',      function () { lineCmd(cm, '- '); }],
       ['1.',     function () { lineCmd(cm, '1. '); }],
       ['>',      function () { lineCmd(cm, '> '); }],
     ];

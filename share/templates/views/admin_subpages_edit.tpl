@@ -19,6 +19,11 @@
       <legend>title</legend>
       <input type="text" name="title" value="{{ sp.title }}" maxlength="200">
     </fieldset>
+    <fieldset class="cms-field cms-field-text">
+      <legend>directory listing</legend>
+      <label class="cms-subpage-check"><input type="checkbox" name="listing" value="1"{% if sp.listing %} checked{% endif %}> generate an Apache-style index for directories that have no <code>index.html</code></label>
+      <p class="cms-help">if <code>README</code> (or <code>README.md</code>/<code>.txt</code>/<code>.rst</code>) is present, it is shown as a code block above the listing.</p>
+    </fieldset>
     <p class="cms-actions"><button type="submit" class="cms-btn cms-btn-primary">save details</button></p>
   </form>
 

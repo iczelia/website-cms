@@ -137,15 +137,16 @@ sub _meta {
   my $err = $ctx->auth->require_csrf($req, "subpage:meta:$id");
   return $err if $err;
 
-  my $slug  = _norm_slug($req->{params}{slug});
-  my $title = defined $req->{params}{title} ? $req->{params}{title} : '';
+  my $slug    = _norm_slug($req->{params}{slug});
+  my $title   = defined $req->{params}{title} ? $req->{params}{title} : '';
+  my $listing = $req->{params}{listing} ? 1 : 0;
   return _render_edit($ctx, $req,
     error => 'invalid slug: use a-z, 0-9 and dashes')
     unless Iczelia::Subpages::valid_slug($slug);
   return _render_edit($ctx, $req, error => "the slug '$slug' is already in use")
     if _slug_taken($ctx, $slug, $id);
 
-  Iczelia::Subpages::update_meta($ctx->db, $id, $slug, $title);
+  Iczelia::Subpages::update_meta($ctx->db, $id, $slug, $title, $listing);
   return Iczelia::HTTP::redirect("/admin/subpages/$id/edit");
 }
 

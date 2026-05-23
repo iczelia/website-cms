@@ -50,59 +50,6 @@ use warnings;
 #   Iczelia::Migrate::run($db);
 
 my @MIGRATIONS = (
-
-  # 0.1.0 -> 0.1.1: post series. Adds the `series_id` and
-  # `series_position` columns to the existing `posts` table. The
-  # `series` table itself and the `posts_series` index are created by
-  # CREATE TABLE/INDEX IF NOT EXISTS in schema.sql.
-  {
-    version => '0.1.0 -> 0.1.1',
-    name    => 'posts.series_id + series_position',
-    check   =>
-      sub {_has_column($_[0], 'posts', 'series_id')},
-    apply => sub {
-      my ($db) = @_;
-      $db->dbh->do('ALTER TABLE posts ADD COLUMN series_id INTEGER');
-      $db->dbh->do(
-        'ALTER TABLE posts ADD COLUMN series_position INTEGER');
-    },
-  },
-
-  # 0.1.1 -> 0.1.2: UA breakdown. Adds derived browser/os/device and a
-  # raw bot UA column to analytics_events. The analytics_ua roll-up
-  # table is created by CREATE TABLE IF NOT EXISTS in schema.sql.
-  {
-    version => '0.1.1 -> 0.1.2',
-    name    => 'analytics_events.browser/os/device/bot_ua',
-    check   =>
-      sub {_has_column($_[0], 'analytics_events', 'browser')},
-    apply => sub {
-      my ($db) = @_;
-      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN browser TEXT');
-      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN os TEXT');
-      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN device TEXT');
-      $db->dbh->do('ALTER TABLE analytics_events ADD COLUMN bot_ua TEXT');
-    },
-  },
-
-  # 0.1.2 -> 0.1.3: UA breakdown roll-up table.
-  {
-    version => '0.1.2 -> 0.1.3',
-    name    => 'analytics_ua table',
-    check   => sub {_table_exists($_[0], 'analytics_ua')},
-    apply   => sub {
-      $_[0]->dbh->do(
-        q{CREATE TABLE IF NOT EXISTS analytics_ua (
-            date  TEXT    NOT NULL,
-            kind  TEXT    NOT NULL,
-            label TEXT    NOT NULL,
-            count INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (date, kind, label)
-          )}
-      );
-    },
-  },
-
   # 0.1.3 -> 0.1.4: static subpages (uploaded HTML/CSS/JS bundles).
   {
     version => '0.1.3 -> 0.1.4',
@@ -135,6 +82,18 @@ my @MIGRATIONS = (
       );
       $db->dbh->do('CREATE INDEX IF NOT EXISTS subpage_files_pid'
         . ' ON subpage_files(subpage_id)');
+    },
+  },
+
+  # 0.1.4 -> 0.1.5: subpages.listing toggle for Apache-style indexes.
+  {
+    version => '0.1.4 -> 0.1.5',
+    name    => 'subpages.listing column',
+    check   => sub {_has_column($_[0], 'subpages', 'listing')},
+    apply   => sub {
+      $_[0]->dbh->do(
+        q{ALTER TABLE subpages
+            ADD COLUMN listing INTEGER NOT NULL DEFAULT 0});
     },
   },
 );

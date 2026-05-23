@@ -3,7 +3,7 @@
 <article class="cms-edit">
   <header class="cms-edit-head">
     <h1>{% if post.id %}edit{% else %}new{% endif %} {{ kind }} post</h1>
-    {% if post.id %}<p class="cms-meta">slug: <code>{{ post.slug }}</code> &middot; last edited {{ post.updated_fmt }}{% if post.word_count %} &middot; {{ post.word_count }} words{% endif %} &middot; <a href="/admin/{{ kind }}/{{ post.slug }}/revisions">revisions</a></p>{% endif %}
+    {% if post.id %}<p class="cms-meta">slug: <code>{{ post.slug }}</code> | last edited {{ post.updated_fmt }}{% if post.word_count %} | {{ post.word_count }} words{% endif %} | <a href="/admin/{{ kind }}/{{ post.slug }}/revisions">revisions</a></p>{% endif %}
   </header>
 
   <form class="cms-form cms-edit-post" method="POST" action="{{ form_action }}">
@@ -34,7 +34,7 @@
           <legend>slug</legend>
           <input type="text" name="slug" value="{{ post.slug }}" pattern="[a-z0-9-]+" maxlength="80">
 {% if post.aliases %}          <ul class="cms-aliases">
-{% for a in post.aliases %}            <li><code>/{{ kind }}/{{ a.from_slug }}/</code> &rarr; current
+{% for a in post.aliases %}            <li><code>/{{ kind }}/{{ a.from_slug }}/</code> -> current
               <button type="submit" form="aldel-{{ a.from_slug }}" class="cms-btn cms-btn-tiny" onclick="return confirm('drop this alias?')">drop</button></li>
 {% endfor %}          </ul>
 {% endif %}        </fieldset>
@@ -44,7 +44,7 @@
 {% if post.tag_options %}          <ul class="cms-tag-list" data-cms-tag-picker role="listbox" aria-label="existing tags, double-click to toggle">
 {% for t in post.tag_options %}            <li class="cms-tag-item{% if t.selected %} cms-tag-item-on{% endif %}" role="option" data-tag="{{ t.tag }}" tabindex="0"><span class="cms-tag-name">{{ t.tag }}</span><span class="cms-tag-count">{{ t.count }}</span></li>
 {% endfor %}          </ul>
-          <small class="cms-help">double-click to add or remove &middot; sorted by recency</small>
+          <small class="cms-help">double-click to add or remove | sorted by recency</small>
 {% endif %}        </fieldset>
         <fieldset class="cms-field cms-field-kappa">
           <legend>kappa</legend>

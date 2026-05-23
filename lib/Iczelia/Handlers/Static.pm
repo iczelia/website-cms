@@ -68,6 +68,7 @@ sub register {
   # filesystem prefix (defeats symlink-out-of-tree attacks).
   my $r_share_web    = Cwd::abs_path("$share/web");
   my $r_share_vendor = Cwd::abs_path("$share/web/vendor");
+  my $r_share_icons  = Cwd::abs_path("$share/web/icons");
   my $r_chrome       = Cwd::abs_path($chrome);
   my $r_media        = Cwd::abs_path($media) // do {
 
@@ -81,6 +82,13 @@ sub register {
     sub {_serve_safe($r_share_web, "cms-analytics.js")});
   $router->get('/cms-subpages.js',
     sub {_serve_safe($r_share_web, "cms-subpages.js")});
+  $router->get(
+    '/cms-icons/*rest',
+    sub {
+      my $req = shift;
+      _serve_safe($r_share_icons, $req->{caps}{rest});
+    }
+  );
   $router->get(
     '/vendor/*rest',
     sub {

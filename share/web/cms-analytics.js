@@ -112,7 +112,7 @@
     }));
     right.appendChild(el('a', {
       class: 'cms-anal-rawlink', href: '/admin/analytics/raw',
-      text: 'raw events »'
+      text: 'raw events >>'
     }));
     if (d && d.generated_at) {
       right.appendChild(el('span', {
@@ -140,7 +140,7 @@
       wrap.appendChild(el('div', { class: 'cms-anal-card' }, [
         el('span', { class: 'cms-anal-card-lbl', text: c[0] }),
         el('strong', { text: c[1] }),
-        el('span', { class: 'cms-anal-card-sub', text: c[2] || ' ' })
+        el('span', { class: 'cms-anal-card-sub', text: c[2] || ' ' })
       ]));
     });
     return wrap;
@@ -273,7 +273,7 @@
       var on = sk === c[0];
       thead.appendChild(el('th', {
         class: 'cms-sortable' + (on ? ' cms-sort-' + (sd < 0 ? 'desc' : 'asc') : ''),
-        text:  c[1] + (on ? (sd < 0 ? ' ▾' : ' ▴') : ''),
+        text:  c[1] + (on ? (sd < 0 ? ' v' : ' ^') : ''),
         on: { click: function () {
           if (state.sort.key === c[0]) state.sort.dir *= -1;
           else state.sort = { key: c[0], dir: c[2] };
@@ -397,7 +397,7 @@
       return;
     }
     if (!state.data) {
-      app.appendChild(el('p', { class: 'cms-anal-loading', text: 'loading analytics…' }));
+      app.appendChild(el('p', { class: 'cms-anal-loading', text: 'loading analytics...' }));
       return;
     }
 
@@ -408,7 +408,7 @@
     ]));
     app.appendChild(controls());
     if (state.loading) {
-      app.appendChild(el('p', { class: 'cms-anal-loading', text: 'refreshing…' }));
+      app.appendChild(el('p', { class: 'cms-anal-loading', text: 'refreshing...' }));
     }
     app.appendChild(cards());
     app.appendChild(chart());

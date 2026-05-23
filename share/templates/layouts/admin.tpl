@@ -38,7 +38,7 @@
 {% block content %}{% endblock %}
 </main>
 <footer class="cms-footer">
-  <span>iczelia.net cms · v{{ version }}</span>
+  <span>iczelia.net cms | v{{ version }}</span>
 </footer>
 <script src="/vendor/codemirror/codemirror.min.js"></script>
 <script src="/vendor/codemirror/markdown.min.js"></script>

@@ -5,9 +5,9 @@
     <h1>{{ kind }}/{{ slug }} rev #{{ rev.revision_num }}</h1>
     <p class="cms-meta">
       captured {{ rev.created_fmt }}
-      {% if rev.author %}&middot; by {{ rev.author }}{% endif %}
-      &middot; <a href="/admin/{{ kind }}/{{ slug }}/revisions">all revisions</a>
-      &middot; <a href="/admin/{{ kind }}/{{ slug }}/edit">current</a>
+      {% if rev.author %}| by {{ rev.author }}{% endif %}
+      | <a href="/admin/{{ kind }}/{{ slug }}/revisions">all revisions</a>
+      | <a href="/admin/{{ kind }}/{{ slug }}/edit">current</a>
     </p>
   </header>
 

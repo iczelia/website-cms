@@ -48,7 +48,7 @@
   }
 
   function loadFile(path) {
-    flash('loading ' + path + '…');
+    flash('loading ' + path + '...');
     fetch('/admin/subpages/' + spId + '/file?path=' + encodeURIComponent(path),
       { credentials: 'same-origin' })
       .then(function (r) {
@@ -71,7 +71,7 @@
     fd.append('csrf', csrf);
     fd.append('path', path);
     fd.append('content', getVal());
-    flash('saving…');
+    flash('saving...');
     fetch('/admin/subpages/' + spId + '/file/save',
       { method: 'POST', credentials: 'same-origin', body: fd })
       .then(function (r) {
@@ -81,7 +81,7 @@
         if (!res.ok || !res.j.ok) {
           throw new Error(res.j.error || 'save failed');
         }
-        flash('saved ' + res.j.path + ' ✓', 'ok');
+        flash('saved ' + res.j.path + ' ', 'ok');
         // A new file is not in the list yet; reload to show it.
         if (!rowFor(res.j.path)) window.location.reload();
       })

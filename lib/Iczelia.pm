@@ -18,6 +18,6 @@ package Iczelia;
 use strict;
 use warnings;
 
-our $VERSION = '0.1.2';
+our $VERSION = '0.1.5';
 
 1;

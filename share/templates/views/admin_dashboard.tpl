@@ -12,7 +12,7 @@
     <h2>blog</h2>
     <p><a class="cms-btn" href="/admin/blog/new">+ new post</a></p>
     <ul class="cms-list">
-{% for p in blog %}      <li><a href="/admin/blog/{{ p.slug }}/edit">{{ p.title }}</a> <span class="cms-meta">{{ p.date }}{% if p.draft %} · draft{% endif %}</span></li>
+{% for p in blog %}      <li><a href="/admin/blog/{{ p.slug }}/edit">{{ p.title }}</a> <span class="cms-meta">{{ p.date }}{% if p.draft %} | draft{% endif %}</span></li>
 {% endfor %}    </ul>
   </section>
 
@@ -20,7 +20,7 @@
     <h2>journal</h2>
     <p><a class="cms-btn" href="/admin/journal/new">+ new entry</a></p>
     <ul class="cms-list">
-{% for p in journal %}      <li><a href="/admin/journal/{{ p.slug }}/edit">{{ p.title }}</a> <span class="cms-meta">{{ p.date }}{% if p.draft %} · draft{% endif %}</span></li>
+{% for p in journal %}      <li><a href="/admin/journal/{{ p.slug }}/edit">{{ p.title }}</a> <span class="cms-meta">{{ p.date }}{% if p.draft %} | draft{% endif %}</span></li>
 {% endfor %}    </ul>
   </section>
 

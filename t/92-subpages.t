@@ -358,6 +358,114 @@ is(
     'unlimited extract keeps every file');
 }
 
+# 11. Directory listings (Apache-style index pages).
+is(Iczelia::Handlers::Subpages::_icon_for('foo.html'), 'html.png',
+  'icon: .html');
+is(Iczelia::Handlers::Subpages::_icon_for('foo.png'),  'image.png',
+  'icon: .png');
+is(Iczelia::Handlers::Subpages::_icon_for('README'),   'readme.png',
+  'icon: README by name');
+is(Iczelia::Handlers::Subpages::_icon_for('Makefile'), 'makefile.png',
+  'icon: Makefile by name');
+is(Iczelia::Handlers::Subpages::_icon_for('weird.xyz'), 'file.png',
+  'icon: unknown extension -> generic file');
+
+{
+  my $sp_id = Iczelia::Subpages::create(
+    $db, 'gallery', 'Gallery',
+    [ { path => 'README', content => "Welcome to the gallery.\n",
+        content_type => 'application/octet-stream',
+        size => 23, is_binary => 0 },
+      { path => 'photos/cat.jpg', content => 'CAT',
+        content_type => 'image/jpeg', size => 3, is_binary => 1 },
+      { path => 'photos/dog.png', content => 'DOG',
+        content_type => 'image/png',  size => 3, is_binary => 1 },
+      { path => 'photos/index.html', content => 'photos page',
+        content_type => 'text/html; charset=utf-8',
+        size => 11, is_binary => 0 },
+      { path => 'photos/sub/a.txt', content => 'A',
+        content_type => 'text/plain; charset=utf-8',
+        size => 1, is_binary => 0 },
+      { path => 'docs/notes.md', content => '# notes',
+        content_type => 'text/markdown; charset=utf-8',
+        size => 7, is_binary => 0 },
+    ]
+  );
+
+  my $root = Iczelia::Subpages::directory_entries($db, $sp_id, '');
+  is_deeply([map {$_->{name}} @$root], ['docs', 'photos', 'README'],
+    'directory_entries root: dirs first, then files alphabetic');
+
+  my $sub = Iczelia::Subpages::directory_entries($db, $sp_id, 'photos');
+  is_deeply([map {$_->{name}} @$sub],
+    ['sub', 'cat.jpg', 'dog.png', 'index.html'],
+    'directory_entries: nested children');
+
+  is(
+    Iczelia::Handlers::Subpages::serve(
+      $ctx, {method => 'GET', path => '/gallery/'}
+    )->{status},
+    404,
+    '/gallery/ -> 404 when listing is off'
+  );
+
+  Iczelia::Subpages::update_meta($db, $sp_id, 'gallery', 'Gallery', 1);
+  is(Iczelia::Subpages::get($db, $sp_id)->{listing}, 1,
+    'listing flag persists');
+
+  my $rroot = Iczelia::Handlers::Subpages::serve($ctx,
+    {method => 'GET', path => '/gallery/'});
+  is($rroot->{status}, 200, '/gallery/ -> 200 with listing on');
+  is($rroot->{headers}{'Content-Type'},
+    'text/html; charset=utf-8', 'listing has HTML content-type');
+  like($rroot->{body}, qr{Index of /gallery/}, 'listing title');
+  like($rroot->{body}, qr{<section class="readme">},
+    'README block above the listing');
+  like($rroot->{body}, qr{Welcome to the gallery}, 'README content present');
+  like($rroot->{body}, qr{href="photos/">photos/}, 'photos/ subdir entry');
+  like($rroot->{body}, qr{/cms-icons/folder\.png}, 'folder icon referenced');
+  unlike($rroot->{body}, qr{Parent Directory},
+    'no parent link at the subpage root');
+
+  like($rroot->{body},
+    qr/copyright \(c\) 2019 - \d{4}, Kamila Szewczyk \(iczelia\)/,
+    'listing footer carries the copyright line');
+  like($rroot->{body}, qr/iczelia cms v\d/,
+    'listing footer advertises the CMS version');
+  unlike($rroot->{body}, qr/&(?:mdash|hellip|raquo|laquo|middot);/,
+    'no decorative HTML entities in the listing');
+
+  # Settings drive the footer text.
+  $db->set_setting('site.author', 'Test Author');
+  $db->set_setting('site.title',  'testsite');
+  $db->set_setting('site.email',  'tester@example.org');
+  $db->set_setting('site.copyright_start', '2020');
+  my $rcfg = Iczelia::Handlers::Subpages::serve($ctx,
+    {method => 'GET', path => '/gallery/'});
+  like($rcfg->{body},
+    qr/copyright \(c\) 2020 - \d{4}, Test Author \(testsite\), tester\@example\.org/,
+    'footer pulls author / title / email / start year from settings');
+
+  my $rdocs = Iczelia::Handlers::Subpages::serve($ctx,
+    {method => 'GET', path => '/gallery/docs/'});
+  is($rdocs->{status}, 200, 'docs/ -> 200 with listing');
+  like($rdocs->{body}, qr{href="notes\.md"}, 'notes.md linked');
+  like($rdocs->{body}, qr{/cms-icons/text\.png},
+    'text icon used for .md');
+  like($rdocs->{body}, qr{Parent Directory},
+    'parent dir link in a nested listing');
+  unlike($rdocs->{body}, qr{<section class="readme">},
+    'no README section when there is no README');
+
+  is(
+    Iczelia::Handlers::Subpages::serve(
+      $ctx, {method => 'GET', path => '/gallery/photos/'}
+    )->{body},
+    'photos page',
+    'an existing index.html still wins over the listing'
+  );
+}
+
 done_testing;
 
 package FakeCtx;

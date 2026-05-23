@@ -2,7 +2,7 @@
 {% block content %}
 <article class="cms-edit">
   <header class="cms-edit-head">
-    <h1>backup &middot; export &middot; import &middot; wipe</h1>
+    <h1>backup | export | import | wipe</h1>
     <p class="cms-meta">snapshots are <code>VACUUM INTO</code> SQLite files plus the <code>media/</code> directory, packaged in a tar archive. ephemeral tables (response_cache, tex_cache, sessions, login_throttle, guestbook_throttle) are excluded from the snapshot.</p>
   </header>
 

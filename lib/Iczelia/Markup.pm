@@ -174,7 +174,7 @@ sub render {
     }
 
     # Internal blank lines are kept if surrounded by indents
-    # (CommonMark §4.4).
+    # (CommonMark, section 4.4).
     if ($line =~ /^(?:    |\t)(.*)$/) {
       my @body = ($1);
       $i++;
@@ -346,7 +346,7 @@ sub _list {
     if ($text =~ s/^\s*\[([ xX])\]\s+//) {
       my $checked = lc($1) eq 'x' ? 1 : 0;
       $any_task = 1;
-      my $glyph = $checked ? '&#9745;' : '&#9744;';    # ☑ ☐
+      my $glyph = $checked ? '&#9745;' : '&#9744;';    # [x] [ ]
       my $cls =
         $checked
         ? 'ab-task ab-task-done'
