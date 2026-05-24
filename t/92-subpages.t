@@ -26,6 +26,7 @@ use Iczelia::DB;
 use Iczelia::Subpages;
 use Iczelia::Router;
 use Iczelia::Server;
+use Iczelia::Template;
 use Iczelia::Handlers::Subpages;
 use Iczelia::Handlers::Admin::Subpages;
 
@@ -359,15 +360,15 @@ is(
 }
 
 # 11. Directory listings (Apache-style index pages).
-is(Iczelia::Handlers::Subpages::_icon_for('foo.html'), 'html.png',
+is(Iczelia::Subpages::icon_for('foo.html'), 'html.png',
   'icon: .html');
-is(Iczelia::Handlers::Subpages::_icon_for('foo.png'),  'image.png',
+is(Iczelia::Subpages::icon_for('foo.png'),  'image.png',
   'icon: .png');
-is(Iczelia::Handlers::Subpages::_icon_for('README'),   'readme.png',
+is(Iczelia::Subpages::icon_for('README'),   'readme.png',
   'icon: README by name');
-is(Iczelia::Handlers::Subpages::_icon_for('Makefile'), 'makefile.png',
+is(Iczelia::Subpages::icon_for('Makefile'), 'makefile.png',
   'icon: Makefile by name');
-is(Iczelia::Handlers::Subpages::_icon_for('weird.xyz'), 'file.png',
+is(Iczelia::Subpages::icon_for('weird.xyz'), 'file.png',
   'icon: unknown extension -> generic file');
 
 {
@@ -464,6 +465,110 @@ is(Iczelia::Handlers::Subpages::_icon_for('weird.xyz'), 'file.png',
     'photos page',
     'an existing index.html still wins over the listing'
   );
+
+  # 12. Admin listing-style edit view: dir helpers, directory_entries
+  # carries the metadata needed for editability decisions, and the
+  # template renders cleanly for root and a nested directory.
+  is(Iczelia::Handlers::Admin::Subpages::_norm_dir(undef), '',
+    '_norm_dir: undef -> empty');
+  is(Iczelia::Handlers::Admin::Subpages::_norm_dir(''), '',
+    '_norm_dir: empty -> empty');
+  is(Iczelia::Handlers::Admin::Subpages::_norm_dir('/css/sub/'), 'css/sub',
+    '_norm_dir: strips slashes');
+  is(Iczelia::Handlers::Admin::Subpages::_norm_dir('../bad'), '',
+    '_norm_dir: rejects traversal');
+  is(Iczelia::Handlers::Admin::Subpages::_norm_dir('a//b'), 'a/b',
+    '_norm_dir: collapses empty segments');
+
+  is(Iczelia::Handlers::Admin::Subpages::_edit_url(7, ''),
+    '/admin/subpages/7/edit',
+    '_edit_url: empty dir -> bare path');
+  is(Iczelia::Handlers::Admin::Subpages::_edit_url(7, 'css/sub'),
+    '/admin/subpages/7/edit?dir=css%2Fsub',
+    '_edit_url: dir gets percent-encoded');
+
+  my $photos = Iczelia::Subpages::directory_entries($db, $sp_id, 'photos');
+  my ($cat) = grep { $_->{name} eq 'cat.jpg' } @$photos;
+  ok($cat && $cat->{is_binary},
+    'directory_entries: file rows now carry is_binary');
+  is($cat && $cat->{content_type}, 'image/jpeg',
+    'directory_entries: file rows now carry content_type');
+
+  my $tpl = Iczelia::Template->new(
+    dirs => ["$FindBin::Bin/../share/templates"]);
+  my $shared_csrf = {
+    logout => 'x', upload => 'x', preview => 'x',
+    cache_drop => 'x', cache_rebuild => 'x',
+    cache_rebuild_cancel => 'x',
+    meta => 'm', rezip => 'r', del => 'd', file => 'f',
+  };
+  my $root_html = $tpl->render('views/admin_subpages_edit.tpl', {
+    sp => { id => 7, slug => 'demo', title => 'Demo', listing => 1 },
+    sp_url => '/demo/', dir => '', dir_url => '/demo/', is_root => 1,
+    crumbs => [{ label => '/demo/', href => '/admin/subpages/7/edit',
+                 current => 1 }],
+    rows => [
+      { is_dir => 1, is_file => 0, is_parent => 0,
+        name => 'css/', icon => 'folder.png',
+        href => '/admin/subpages/7/edit?dir=css',
+        mtime => '2026-01-01 00:00', size => '-' },
+      { is_dir => 0, is_file => 1, is_parent => 0,
+        name => 'index.html', icon => 'html.png',
+        path => 'index.html', mtime => '2026-01-01 00:00',
+        size => '1.0 KB', content_type => 'text/html', editable => 1,
+        view_url => '/admin/subpages/7/file?path=index.html',
+        public_url => '/demo/index.html' },
+    ],
+    empty => 0, file_count => 2, no_index => 0, readme => undef,
+    error => undef, notice => undef,
+    upload_path_hint => '', new_file_path_hint => '',
+    csrf => $shared_csrf, csrf_form => '',
+    title => 'subpage', version => '0',
+  });
+  like($root_html, qr/Index of/, 'admin edit: listing header');
+  like($root_html, qr{/cms-icons/folder\.png}, 'admin edit: folder icon');
+  like($root_html, qr{/cms-icons/html\.png},   'admin edit: html icon');
+  like($root_html, qr/save details/,
+    'admin edit: meta form visible at root');
+  like($root_html, qr/replace bundle/,
+    'admin edit: bundle replace visible at root');
+  like($root_html, qr/delete this subpage/,
+    'admin edit: subpage delete visible at root');
+  unlike($root_html, qr/Parent Directory/,
+    'admin edit: no parent link at root');
+
+  my $sub_html = $tpl->render('views/admin_subpages_edit.tpl', {
+    sp => { id => 7, slug => 'demo', title => 'Demo', listing => 1 },
+    sp_url => '/demo/', dir => 'css/sub', dir_url => '/demo/css/sub/',
+    is_root => 0,
+    crumbs => [
+      { label => '/demo/', href => '/admin/subpages/7/edit' },
+      { label => 'css/',   href => '/admin/subpages/7/edit?dir=css' },
+      { label => 'sub/',   href => '/admin/subpages/7/edit?dir=css%2Fsub',
+        current => 1 },
+    ],
+    rows => [
+      { is_dir => 1, is_file => 0, is_parent => 1,
+        name => 'Parent Directory', icon => 'folder.png',
+        href => '/admin/subpages/7/edit?dir=css',
+        mtime => '-', size => '-' },
+    ],
+    empty => 0, file_count => 5, no_index => 0, readme => undef,
+    error => undef, notice => undef,
+    upload_path_hint => 'css/sub/', new_file_path_hint => 'css/sub/',
+    csrf => $shared_csrf, csrf_form => '',
+    title => 'subpage', version => '0',
+  });
+  like($sub_html, qr/Parent Directory/,
+    'admin edit subdir: parent link present');
+  like($sub_html, qr/name="dir" value="css\/sub"/,
+    'admin edit subdir: upload form carries current dir');
+  like($sub_html, qr/upload a file to.*\/demo\/css\/sub\//s,
+    'admin edit subdir: upload heading reflects current dir');
+  unlike($sub_html, qr/save details/,
+    'admin edit subdir: meta form hidden outside root');
+  unlike($sub_html, qr/delete this subpage/,
+    'admin edit subdir: subpage delete hidden outside root');
 }
 
 done_testing;

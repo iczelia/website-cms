@@ -574,3 +574,28 @@ a:hover { text-decoration: underline }
 .cms-subpage-status-ok  { color: #2f6f3f }
 .cms-subpage-status-err { color: #c44 }
 .cms-subpage-edit .CodeMirror { border: 1px solid #ccc; height: 440px }
+.cms-subpage-crumbs { font-family: ui-monospace, monospace; font-size: 0.95em }
+.cms-subpage-crumbs a { color: #1a3a7a; text-decoration: none }
+.cms-subpage-crumbs a:hover { text-decoration: underline }
+.cms-subpage-crumbs span { color: #000 }
+.cms-subpage-listing td.icon { width: 32px; padding: 0 4px }
+.cms-subpage-listing td.icon img { height: 22px; vertical-align: middle; border: 0 }
+.cms-subpage-listing th.mtime, .cms-subpage-listing th.size,
+.cms-subpage-listing td.mtime, .cms-subpage-listing td.size {
+  text-align: right; white-space: nowrap; color: #555;
+}
+.cms-subpage-listing td.mtime { font-size: 12px }
+.cms-subpage-listing td.name a { color: #1a3a7a; text-decoration: none }
+.cms-subpage-listing td.name a:hover { text-decoration: underline }
+.cms-subpage-readme {
+  background: #fafafa; border: 1px solid #ddd;
+  padding: 0.4rem 0.8rem; margin: 0 0 0.8rem;
+}
+.cms-subpage-readme h3 {
+  margin: 0 0 0.3rem; font: bold 13px ui-monospace, monospace;
+}
+.cms-subpage-readme pre {
+  margin: 0; padding: 0.4rem 0.6rem; background: #fff;
+  border: 1px solid #e2e2e2; max-height: 320px; overflow: auto;
+  font: 13px/1.5 ui-monospace, monospace;
+}

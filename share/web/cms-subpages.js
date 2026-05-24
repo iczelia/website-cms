@@ -98,10 +98,15 @@
   saveBtn.addEventListener('click', save);
   if (newBtn) {
     newBtn.addEventListener('click', function () {
-      pathInput.value = '';
+      var prefix = newBtn.getAttribute('data-prefix') || '';
+      pathInput.value = prefix;
       setVal('');
       flash('new file: type a path, then save', 'ok');
       pathInput.focus();
+      if (pathInput.setSelectionRange) {
+        var n = pathInput.value.length;
+        pathInput.setSelectionRange(n, n);
+      }
     });
   }
 })();

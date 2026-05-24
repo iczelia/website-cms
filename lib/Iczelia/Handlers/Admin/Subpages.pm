@@ -22,6 +22,7 @@ use Encode            ();
 use Iczelia::HTTP     ();
 use Iczelia::Subpages ();
 use Iczelia::Time     qw(ts_fmt);
+use Iczelia::Util     qw(escape_url);
 
 my $JSON = JSON::PP->new->utf8(0);
 
@@ -103,31 +104,153 @@ sub _render_edit {
   my $id = _id($req);
   my $sp = Iczelia::Subpages::get($ctx->db, $id)
     or return Iczelia::HTTP::error(404);
-  my $sid   = $req->{auth_sid};
-  my $files = Iczelia::Subpages::files($ctx->db, $id);
-  my $has_index = 0;
-  for my $f (@$files) {
-    $f->{size_fmt} = _fmt_size($f->{size});
-    $f->{editable} = $f->{is_binary} ? 0 : 1;
-    $has_index = 1 if $f->{path} eq 'index.html';
+  my $sid = $req->{auth_sid};
+
+  my $raw_dir =
+      exists $opt{dir} ? $opt{dir}
+    :                    ($req->{qparams}{dir} // $req->{params}{dir} // '');
+  my $dir = _norm_dir($raw_dir);
+  $dir = '' unless defined $dir;
+
+  my $has_index = Iczelia::Subpages::file($ctx->db, $id, 'index.html') ? 1 : 0;
+  my $file_total = Iczelia::Subpages::file_count($ctx->db, $id);
+
+  my $entries = Iczelia::Subpages::directory_entries($ctx->db, $id, $dir);
+
+  # The README block above the listing - same rule as the public view,
+  # scoped to the current directory.
+  my $readme;
+  for my $e (@$entries) {
+    next if $e->{type} ne 'file';
+    next unless Iczelia::Subpages::is_readme_name($e->{name});
+    my $row = Iczelia::Subpages::file($ctx->db, $id, $e->{path});
+    if ($row) {
+      my $bytes   = $row->{content};
+      my $decoded = eval {
+        Encode::decode('UTF-8', $bytes, Encode::FB_CROAK());
+      };
+      $readme = {
+        name    => $e->{name},
+        content => (defined $decoded ? $decoded : $bytes),
+      };
+    }
+    last;
   }
+
+  my $base = "/admin/subpages/$id/edit";
+  my @rows;
+  if (length $dir) {
+    my $parent = $dir;
+    $parent =~ s{/?[^/]+\z}{};
+    push @rows, {
+      is_dir    => 1,
+      is_file   => 0,
+      is_parent => 1,
+      name      => 'Parent Directory',
+      icon      => 'folder.png',
+      href      => $base . (length $parent ? '?dir=' . escape_url($parent) : ''),
+      mtime     => '-',
+      size      => '-',
+    };
+  }
+  for my $e (@$entries) {
+    if ($e->{type} eq 'dir') {
+      my $child = length($dir) ? "$dir/$e->{name}" : $e->{name};
+      push @rows, {
+        is_dir    => 1,
+        is_file   => 0,
+        is_parent => 0,
+        name      => $e->{name} . '/',
+        icon      => 'folder.png',
+        href      => $base . '?dir=' . escape_url($child),
+        mtime     => Iczelia::Subpages::fmt_mtime($e->{updated_at}),
+        size      => '-',
+      };
+    }
+    else {
+      push @rows, {
+        is_dir       => 0,
+        is_file      => 1,
+        is_parent    => 0,
+        name         => $e->{name},
+        icon         => Iczelia::Subpages::icon_for($e->{name}),
+        path         => $e->{path},
+        mtime        => Iczelia::Subpages::fmt_mtime($e->{updated_at}),
+        size         => Iczelia::Subpages::fmt_size($e->{size}),
+        content_type => $e->{content_type},
+        editable     => ($e->{is_binary} ? 0 : 1),
+        view_url     =>
+          "/admin/subpages/$id/file?path=" . escape_url($e->{path}),
+        public_url   => "/$sp->{slug}/" . _public_path($e->{path}),
+      };
+    }
+  }
+
+  # Breadcrumb segments: { label, href }.
+  my @crumbs = ({label => "/$sp->{slug}/", href => $base});
+  if (length $dir) {
+    my @segs = split m{/}, $dir;
+    my $acc = '';
+    for my $i (0 .. $#segs) {
+      $acc = length($acc) ? "$acc/$segs[$i]" : $segs[$i];
+      push @crumbs, {
+        label => $segs[$i] . '/',
+        href  => $base . '?dir=' . escape_url($acc),
+      };
+    }
+  }
+  $crumbs[-1]{current} = 1;
+
+  my $public_url = "/$sp->{slug}/" . (length $dir ? "$dir/" : '');
+
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_subpages_edit.tpl',
-    title      => "subpage: $sp->{slug}",
-    sp         => $sp,
-    sp_url     => "/$sp->{slug}/",
-    files      => $files,
-    file_count => scalar(@$files),
-    no_index   => ($has_index ? 0 : 1),
-    error      => $opt{error},
-    notice     => $opt{notice},
-    csrf_extra => {
+    title       => "subpage: $sp->{slug}",
+    sp          => $sp,
+    sp_url      => "/$sp->{slug}/",
+    dir         => $dir,
+    dir_url     => $public_url,
+    is_root     => (length $dir ? 0 : 1),
+    crumbs      => \@crumbs,
+    rows        => \@rows,
+    empty       => (@rows ? 0 : 1),
+    file_count  => $file_total,
+    no_index    => ($has_index ? 0 : 1),
+    readme      => $readme,
+    error       => $opt{error},
+    notice      => $opt{notice},
+    upload_path_hint => (length $dir ? "$dir/" : ''),
+    new_file_path_hint => (length $dir ? "$dir/" : ''),
+    csrf_extra  => {
       meta  => $ctx->auth->csrf_token($sid, "subpage:meta:$id"),
       rezip => $ctx->auth->csrf_token($sid, "subpage:rezip:$id"),
       del   => $ctx->auth->csrf_token($sid, "subpage:del:$id"),
       file  => $ctx->auth->csrf_token($sid, "subpage:file:$id"),
     },
   );
+}
+
+sub _public_path {
+  my ($path) = @_;
+  return '' unless defined $path;
+  return join '/', map {escape_url($_)} split m{/}, $path;
+}
+
+sub _norm_dir {
+  my ($s) = @_;
+  return '' unless defined $s;
+  $s =~ s{^/+}{};
+  $s =~ s{/+$}{};
+  return '' unless length $s;
+  my $clean = Iczelia::Subpages::sanitize_rel_path($s);
+  return defined $clean ? $clean : '';
+}
+
+sub _edit_url {
+  my ($id, $dir) = @_;
+  my $u = "/admin/subpages/$id/edit";
+  $u .= '?dir=' . escape_url($dir) if defined $dir && length $dir;
+  return $u;
 }
 
 sub _meta {
@@ -228,18 +351,28 @@ sub _file_upload {
   my $err = $ctx->auth->require_csrf($req, "subpage:file:$id");
   return $err if $err;
 
+  my $dir = _norm_dir($req->{params}{dir});
+
   my @up = @{$req->{uploads} || []};
-  return _render_edit($ctx, $req, error => 'choose a file to upload')
+  return _render_edit($ctx, $req,
+    dir => $dir, error => 'choose a file to upload')
     unless @up && defined $up[0]{body} && length $up[0]{body};
-  return _render_edit($ctx, $req, error => 'file too large')
+  return _render_edit($ctx, $req,
+    dir => $dir, error => 'file too large')
     if length($up[0]{body}) > Iczelia::Subpages::MAX_FILE;
 
-  my $path = $req->{params}{path};
-  $path = $up[0]{filename} unless defined $path && length $path;
+  my $raw  = $req->{params}{path};
+  my $path = (defined $raw && length $raw) ? $raw : $up[0]{filename};
+
+  # If the user did not give an absolute-from-bundle-root path and we are
+  # inside a subdirectory, drop the upload into the current directory.
+  if (length $dir && defined $path && length $path && $path !~ m{/}) {
+    $path = "$dir/$path";
+  }
   my $rel = Iczelia::Subpages::put_file($ctx->db, $id, $path, $up[0]{body});
-  return _render_edit($ctx, $req, error => 'invalid file path')
+  return _render_edit($ctx, $req, dir => $dir, error => 'invalid file path')
     unless defined $rel;
-  return Iczelia::HTTP::redirect("/admin/subpages/$id/edit");
+  return Iczelia::HTTP::redirect(_edit_url($id, $dir));
 }
 
 sub _file_delete {
@@ -248,10 +381,11 @@ sub _file_delete {
   Iczelia::Subpages::get($ctx->db, $id) or return Iczelia::HTTP::error(404);
   my $err = $ctx->auth->require_csrf($req, "subpage:file:$id");
   return $err if $err;
+  my $dir  = _norm_dir($req->{params}{dir});
   my $path = $req->{params}{path};
   Iczelia::Subpages::delete_file($ctx->db, $id, $path)
     if defined $path && length $path;
-  return Iczelia::HTTP::redirect("/admin/subpages/$id/edit");
+  return Iczelia::HTTP::redirect(_edit_url($id, $dir));
 }
 
 sub _id {
@@ -308,14 +442,6 @@ sub _bundle_bytes {
   return (undef, 'the server file is empty')
     unless defined $data && length $data;
   return ($data, undef, 1);
-}
-
-sub _fmt_size {
-  my ($n) = @_;
-  $n ||= 0;
-  return "$n B" if $n < 1024;
-  return sprintf('%.1f KB', $n / 1024) if $n < 1024 * 1024;
-  return sprintf('%.1f MB', $n / 1048576);
 }
 
 sub _json {
