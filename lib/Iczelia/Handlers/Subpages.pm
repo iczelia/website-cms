@@ -39,6 +39,10 @@ sub serve {
   my $sp = Iczelia::Subpages::get_by_slug($ctx->db, $slug)
     or return undef;
 
+  if (my $want = _wanted_theme($req)) {
+    return _set_theme_response($req, $want);
+  }
+
   if (!defined $rest) {
     return _redirect("/$slug/", $req);
   }
@@ -83,7 +87,7 @@ sub serve {
   }
 
   if (!$file && $is_dir_req && $sp->{listing}) {
-    return _render_listing($ctx, $sp, $rest);
+    return _render_listing($ctx, $sp, $rest, $req);
   }
 
   return Iczelia::HTTP::error(404) unless $file;
@@ -105,10 +109,53 @@ sub _redirect {
   return Iczelia::HTTP::redirect($to, status => 301);
 }
 
+# Theme persistence without JavaScript:
+#   * cookie `iczelia_theme` (light|dark, missing = auto/system)
+#   * `?set-theme=light|dark|auto` writes the cookie and 303-redirects
+#     back to the clean URL so the next render picks up the new value.
+
+use constant THEME_COOKIE => 'iczelia_theme';
+
+sub _theme_from_cookie {
+  my ($req) = @_;
+  my $v = $req->{cookies} && $req->{cookies}{+THEME_COOKIE};
+  return $v && ($v eq 'light' || $v eq 'dark') ? $v : 'auto';
+}
+
+sub _wanted_theme {
+  my ($req) = @_;
+  my $v = $req->{qparams} && $req->{qparams}{'set-theme'};
+  return undef unless defined $v;
+  return undef unless $v eq 'light' || $v eq 'dark' || $v eq 'auto';
+  return $v;
+}
+
+sub _set_theme_response {
+  my ($req, $value) = @_;
+  my %c = (
+    name     => THEME_COOKIE,
+    path     => '/',
+    samesite => 'Lax',
+  );
+  if ($value eq 'auto') {
+    $c{value}   = '';
+    $c{max_age} = 0;
+  }
+  else {
+    $c{value}   = $value;
+    $c{max_age} = 60 * 60 * 24 * 365;
+  }
+  $c{secure} = 1 if Iczelia::HTTP::is_https($req);
+  my $resp = Iczelia::HTTP::redirect($req->{path}, status => 303);
+  $resp->{cookies}   = [Iczelia::HTTP::make_cookie(%c)];
+  $resp->{_no_cache} = 1;
+  return $resp;
+}
+
 # Apache-style directory index for /<slug>/<dir>/ when the subpage has
 # the listing toggle on and no index.html exists at that depth.
 sub _render_listing {
-  my ($ctx, $sp, $rest) = @_;
+  my ($ctx, $sp, $rest, $req) = @_;
   my $slug = $sp->{slug};
   my $dir  = $rest;
   $dir =~ s{^/}{};
@@ -135,14 +182,16 @@ sub _render_listing {
   }
 
   my $url_path = "/$slug/" . (length $dir ? "$dir/" : '');
+  my $theme    = _theme_from_cookie($req // {});
   return {
     status  => 200,
     headers => {
       'Content-Type'  => 'text/html; charset=utf-8',
       'Cache-Control' => 'no-cache',
+      'Vary'          => 'Cookie',
     },
     body => _listing_html($url_path, $dir, $entries, $readme,
-      _footer_for($ctx->db)),
+      _footer_for($ctx->db), $theme),
     _no_cache => 1,
   };
 }
@@ -161,9 +210,13 @@ sub _footer_for {
 }
 
 sub _listing_html {
-  my ($url_path, $dir, $entries, $readme, $footer) = @_;
+  my ($url_path, $dir, $entries, $readme, $footer, $theme) = @_;
+  $theme //= 'auto';
   my $title   = "Index of $url_path";
   my $esc_ttl = escape_html($title);
+  my $html_class = $theme eq 'light' ? ' class="t-light"'
+                 : $theme eq 'dark'  ? ' class="t-dark"'
+                 :                     '';
 
   my @rows;
   if (length $dir) {
@@ -202,13 +255,17 @@ sub _listing_html {
         qq{<section class="readme"><h2>$name</h2>}
       . qq{<pre><code>$body</code></pre></section>\n};
   }
-  my $esc_footer = escape_html($footer // '');
+  my $esc_footer  = escape_html($footer // '');
+  my $toggle_html = _theme_toggle_html($theme);
+  my $dark_auto   = _dark_rules('  html:not(.t-light)');
+  my $dark_forced = _dark_rules('html.t-dark');
 
   return <<"HTML";
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"$html_class>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="color-scheme" content="light dark">
 <title>$esc_ttl</title>
 <style>
 body { font-family: Arial, sans-serif; color: #000; background: #fff;
@@ -238,7 +295,12 @@ a:hover { color: #4a6da7; text-decoration: underline; }
               font: 13px/1.5 monospace; color: #000; }
 hr { border: 0; border-top: 1px solid #ccc; margin: 18px 0 6px; }
 address { font-style: normal; font-size: 11px; color: #777; }
-</style>
+.theme { float: right; font-size: 11px; color: #777; }
+.theme a { color: #888; margin-left: 6px; }
+.theme a.on { color: #000; font-weight: bold; text-decoration: none; }
+\@media (prefers-color-scheme: dark) {
+$dark_auto}
+$dark_forced</style>
 </head>
 <body>
 <h1>$esc_ttl</h1>
@@ -249,10 +311,45 @@ $row_html
 </tbody>
 </table>
 <hr>
-<address>$esc_footer</address>
+$toggle_html<address>$esc_footer</address>
 </body>
 </html>
 HTML
+}
+
+sub _theme_toggle_html {
+  my ($current) = @_;
+  $current ||= 'auto';
+  my @opts = (['auto', 'auto'], ['light', 'light'], ['dark', 'dark']);
+  my @parts;
+  for my $o (@opts) {
+    my ($val, $label) = @$o;
+    my $on = ($val eq $current) ? ' class="on"' : '';
+    push @parts, qq{<a href="?set-theme=$val"$on>$label</a>};
+  }
+  return '<div class="theme">theme:' . join('', @parts) . '</div>';
+}
+
+# Dark palette emitted twice: once inside the prefers-color-scheme query
+# (gated by :not(.t-light) so a forced-light cookie wins over the system),
+# and once at top level keyed on html.t-dark (forced-dark cookie).
+sub _dark_rules {
+  my ($p) = @_;
+  return <<"CSS";
+$p body { background: #000; color: #b9c8d6; }
+$p thead th { background: #0a1620; border-bottom-color: rgba(110,145,180,0.55); }
+$p tbody td { border-bottom-color: rgba(110,145,180,0.18); }
+$p tbody tr:hover { background: rgba(140,180,220,0.08); }
+$p td.size, $p td.mtime { color: #8aa0b8; }
+$p a { color: #6ea4d6; }
+$p a:hover { color: #ffffff; }
+$p .readme { background: #0a0e14; border-color: rgba(110,145,180,0.35); }
+$p .readme pre { background: #000; color: #b9c8d6; border-color: rgba(110,145,180,0.35); }
+$p hr { border-top-color: rgba(110,145,180,0.55); }
+$p address, $p .theme { color: #6ea4d6; }
+$p .theme a { color: #6ea4d6; }
+$p .theme a.on { color: #ffffff; }
+CSS
 }
 
 1;

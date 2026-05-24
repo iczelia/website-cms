@@ -466,6 +466,80 @@ is(Iczelia::Subpages::icon_for('weird.xyz'), 'file.png',
     'an existing index.html still wins over the listing'
   );
 
+  # 11b. Theme toggle: cookie-driven, no JavaScript.
+  my $rauto = Iczelia::Handlers::Subpages::serve($ctx,
+    {method => 'GET', path => '/gallery/'});
+  unlike($rauto->{body}, qr{<html[^>]*class="t-},
+    'no html class when theme cookie absent (auto)');
+  like($rauto->{body}, qr{<meta name="color-scheme" content="light dark">},
+    'color-scheme meta advertises both modes');
+  like($rauto->{body}, qr{prefers-color-scheme: dark},
+    'CSS includes prefers-color-scheme query');
+  like($rauto->{body},
+    qr{<a href="\?set-theme=auto" class="on">auto</a>},
+    'theme toggle marks auto as current');
+  like($rauto->{body}, qr{<a href="\?set-theme=light">light</a>},
+    'theme toggle exposes light option');
+  like($rauto->{body}, qr{<a href="\?set-theme=dark">dark</a>},
+    'theme toggle exposes dark option');
+  is($rauto->{headers}{Vary}, 'Cookie',
+    'listing varies by Cookie so caches do not mix themes');
+
+  my $rdark = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    cookies => { iczelia_theme => 'dark' },
+  });
+  like($rdark->{body}, qr{<html lang="en" class="t-dark">},
+    'dark cookie stamps t-dark on <html>');
+  like($rdark->{body},
+    qr{<a href="\?set-theme=dark" class="on">dark</a>},
+    'theme toggle marks dark as current when cookie says so');
+
+  my $rlight = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    cookies => { iczelia_theme => 'light' },
+  });
+  like($rlight->{body}, qr{<html lang="en" class="t-light">},
+    'light cookie stamps t-light on <html>');
+
+  my $rbad = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    cookies => { iczelia_theme => 'neon' },
+  });
+  unlike($rbad->{body}, qr{<html[^>]*class="t-},
+    'unrecognized cookie value falls back to auto');
+
+  my $rset_dark = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    qparams => { 'set-theme' => 'dark' },
+  });
+  is($rset_dark->{status}, 303, '?set-theme=dark -> 303 redirect');
+  is($rset_dark->{headers}{Location}, '/gallery/',
+    '?set-theme redirects to clean URL (query stripped)');
+  ok($rset_dark->{cookies} && @{$rset_dark->{cookies}} == 1,
+    '?set-theme writes one Set-Cookie');
+  like($rset_dark->{cookies}[0], qr/^iczelia_theme=dark\b/,
+    'cookie value is dark');
+  like($rset_dark->{cookies}[0], qr/Max-Age=\d+/,
+    'cookie has Max-Age for persistence');
+  like($rset_dark->{cookies}[0], qr{Path=/(?:;|$)},
+    'cookie scoped to whole site');
+
+  my $rset_auto = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    qparams => { 'set-theme' => 'auto' },
+  });
+  is($rset_auto->{status}, 303, '?set-theme=auto -> 303 redirect');
+  like($rset_auto->{cookies}[0], qr/^iczelia_theme=;.*Max-Age=0/,
+    '?set-theme=auto clears the cookie');
+
+  my $rset_bad = Iczelia::Handlers::Subpages::serve($ctx, {
+    method  => 'GET', path => '/gallery/',
+    qparams => { 'set-theme' => 'magenta' },
+  });
+  is($rset_bad->{status}, 200,
+    'unknown set-theme value falls through to normal render');
+
   # 12. Admin listing-style edit view: dir helpers, directory_entries
   # carries the metadata needed for editability decisions, and the
   # template renders cleanly for root and a nested directory.
