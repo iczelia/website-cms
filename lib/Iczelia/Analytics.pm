@@ -30,6 +30,30 @@ our $AGG_INTERVAL = 60;
 
 my $LAST_AGG_AT = 0;
 
+# Asset / second-fetch paths that drown out real pageviews in the
+# "most common destinations" chart. Concatenated as a literal AND
+# fragment into the top_paths SELECT; covers everything served by
+# Iczelia::Handlers::Static plus the well-known crawler files.
+# Keep this list in sync with Static.pm's route map.
+sub ASSET_FILTER {
+  return q{
+    AND path NOT LIKE '/vendor/%'
+    AND path NOT LIKE '/fonts/%'
+    AND path NOT LIKE '/assets-%'
+    AND path NOT LIKE '/cms-icons/%'
+    AND path NOT LIKE '/cms-%'
+    AND path NOT LIKE '/cms.%'
+    AND path NOT LIKE '/media/%'
+    AND path NOT LIKE '/og/%'
+    AND path NOT LIKE '/style.%'
+    AND path NOT LIKE '/about.compat.css'
+    AND path NOT LIKE '/common.compat.css'
+    AND path NOT IN ('/favicon.ico', '/robots.txt', '/sitemap.xml',
+                     '/feed.xml',   '/index.xml',  '/rss.xml',
+                     '/pub.pgp')
+  };
+}
+
 # Stored-secret-derived so every preforked worker hashes alike;
 # otherwise daily-uniques inflate across worker boundaries.
 sub _daily_salt {
@@ -238,25 +262,29 @@ sub dashboard_data {
        ORDER BY date}, $start
   );
   # The "order by" column can't be bound; pick the SQL at the Perl level.
+  # ASSET_FILTER excludes static-file routes (CSS, JS, fonts, image
+  # packs, media uploads, favicons, sitemap, robots) from "most common
+  # destinations" -- those numbers are dominated by browser secondary
+  # fetches and drown out the actual pageviews the dashboard is for.
   my $top_paths = $exclude_bots
     ? $db->all(
-      q{SELECT path,
+      qq{SELECT path,
                SUM(views)   AS views,
                SUM(uniques) AS uniques,
                SUM(bots)    AS bots
           FROM analytics_daily
-         WHERE date >= ?
+         WHERE date >= ? @{[ ASSET_FILTER() ]}
          GROUP BY path
          ORDER BY (SUM(views) - SUM(bots)) DESC
          LIMIT 20}, $start
     )
     : $db->all(
-      q{SELECT path,
+      qq{SELECT path,
                SUM(views)   AS views,
                SUM(uniques) AS uniques,
                SUM(bots)    AS bots
           FROM analytics_daily
-         WHERE date >= ?
+         WHERE date >= ? @{[ ASSET_FILTER() ]}
          GROUP BY path
          ORDER BY SUM(views) DESC
          LIMIT 20}, $start

@@ -82,6 +82,8 @@ sub register {
     sub {_serve_safe($r_share_web, "cms-analytics.js")});
   $router->get('/cms-subpages.js',
     sub {_serve_safe($r_share_web, "cms-subpages.js")});
+  $router->get('/cms-upload.js',
+    sub {_serve_safe($r_share_web, "cms-upload.js")});
   $router->get(
     '/cms-icons/*rest',
     sub {

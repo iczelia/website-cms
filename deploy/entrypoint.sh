@@ -21,7 +21,7 @@ CONFIG=/etc/iczelia/iczelia.conf
 VAR=/var/lib/iczelia
 
 # Make sure the volume is laid out (a fresh volume mount is empty).
-install -d -m 0755 "$VAR" "$VAR/media" "$VAR/tmp"
+install -d -m 0755 "$VAR" "$VAR/media" "$VAR/tmp" "$VAR/git"
 
 # Cookie secret: 32 random bytes, hex-encoded. Generated once and persisted.
 SECRET="$VAR/cookie-secret"

@@ -59,6 +59,23 @@ sub bypass_for_request {
   return 1 if $path =~ m{^/guestbook/?$};
   return 1 if $req->{cookies} && exists $req->{cookies}{iczelia_sid};
 
+  # Theme cookie (light|dark) toggles a class on <html>; the cache keys
+  # by path alone so a cookie-bearing render would poison the entry for
+  # everyone else. No-cookie users (system-detect via prefers-color-
+  # scheme) stay on the cached path -- which is the common case.
+  return 1 if $req->{cookies} && exists $req->{cookies}{iczelia_theme};
+  # Same story for the tab-size preference (per-visitor pref bakes
+  # into the inline CSS for git code blocks).
+  return 1 if $req->{cookies} && exists $req->{cookies}{iczelia_tab};
+
+  # The public git browser renders HEAD-based repository state and
+  # repo-list metadata that can change outside the request path
+  # itself: mirror pulls, manual imports, repo metadata edits, and raw
+  # blob URLs all reuse stable paths for moving content. Keep it out
+  # of the daemon cache; handlers also stamp no-store for browsers and
+  # upstream caches.
+  return 1 if $path =~ m{^/git(?:/|\z)};
+
   # Chrome image packs dispatch avif/png by Accept and emit Vary: Accept.
   # The internal cache keys by path alone and stamps a fixed Vary, so
   # leave it to nginx (which honours Vary) to split these.

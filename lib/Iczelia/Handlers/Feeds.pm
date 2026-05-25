@@ -295,6 +295,28 @@ sub _sitemap {
     }
   } @$series;
 
+  # Git repos: index + per-repo summary + tree only. Log / commit /
+  # blob / raw URLs explode combinatorially and are robotized below.
+  my $git_rows = $db->all(
+    q{SELECT slug, updated_at FROM git_repos ORDER BY slug}
+  );
+  if ($git_rows && @$git_rows) {
+    push @urls, {loc => "$base/git/", priority => '0.4'};
+    for my $r (@$git_rows) {
+      push @urls,
+        {
+        loc      => "$base/git/$r->{slug}/",
+        lastmod  => fmt_iso($r->{updated_at}),
+        priority => '0.4'
+        },
+        {
+        loc      => "$base/git/$r->{slug}/tree/",
+        lastmod  => fmt_iso($r->{updated_at}),
+        priority => '0.3'
+        };
+    }
+  }
+
   my @bits;
   push @bits, '<?xml version="1.0" encoding="utf-8"?>';
   push @bits, '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
@@ -321,6 +343,12 @@ sub _robots {
   my $body = "User-agent: *\n";
   $body .= "Disallow: $_\n"
     for ('/admin/', @Iczelia::Handlers::Honeypot::PATHS);
+  # Git browser: keep summary + tree indexable, drop the URL-explosive
+  # commit / blob / raw / log paths.
+  $body .= "Disallow: /git/*/log/\n";
+  $body .= "Disallow: /git/*/commit/\n";
+  $body .= "Disallow: /git/*/blob/\n";
+  $body .= "Disallow: /git/*/raw/\n";
   $body .= "\nSitemap: $base/sitemap.xml\n";
   return {
     status  => 200,

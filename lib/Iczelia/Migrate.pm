@@ -96,6 +96,75 @@ my @MIGRATIONS = (
             ADD COLUMN listing INTEGER NOT NULL DEFAULT 0});
     },
   },
+
+  # 0.1.5 -> 0.1.6: resumable upload sessions for large admin uploads.
+  {
+    version => '0.1.5 -> 0.1.6',
+    name    => 'upload_sessions table',
+    check   => sub {_table_exists($_[0], 'upload_sessions')},
+    apply   => sub {
+      my ($db) = @_;
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS upload_sessions (
+            id           TEXT    PRIMARY KEY,
+            sid          TEXT    NOT NULL,
+            filename     TEXT,
+            size         INTEGER NOT NULL DEFAULT 0,
+            created_at   INTEGER NOT NULL,
+            finalized_at INTEGER
+          )}
+      );
+      $db->dbh->do(
+        'CREATE INDEX IF NOT EXISTS upload_sessions_created'
+        . ' ON upload_sessions(created_at)'
+      );
+    },
+  },
+
+  # 0.1.5 -> 0.1.6: cgit-style git repos.
+  {
+    version => '0.1.5 -> 0.1.6',
+    name    => 'git_repos + git_commit_cache tables',
+    check   => sub {_table_exists($_[0], 'git_repos')},
+    apply   => sub {
+      my ($db) = @_;
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS git_repos (
+            id                INTEGER PRIMARY KEY,
+            slug              TEXT    NOT NULL UNIQUE,
+            title             TEXT    NOT NULL DEFAULT '',
+            owner             TEXT    NOT NULL DEFAULT '',
+            description       TEXT    NOT NULL DEFAULT '',
+            default_branch    TEXT    NOT NULL DEFAULT 'main',
+            mirror_url        TEXT,
+            mirror_interval_s INTEGER NOT NULL DEFAULT 3600,
+            last_pulled_at    INTEGER,
+            last_pull_status  TEXT,
+            last_pull_error   TEXT,
+            head_sha          TEXT,
+            created_at        INTEGER NOT NULL,
+            updated_at        INTEGER NOT NULL
+          )}
+      );
+      $db->dbh->do(
+        q{CREATE INDEX IF NOT EXISTS git_repos_mirror_due
+            ON git_repos(last_pulled_at) WHERE mirror_url IS NOT NULL}
+      );
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS git_commit_cache (
+            repo_id        INTEGER NOT NULL
+                            REFERENCES git_repos(id) ON DELETE CASCADE,
+            head_sha       TEXT    NOT NULL,
+            dir            TEXT    NOT NULL,
+            name           TEXT    NOT NULL,
+            commit_sha     TEXT    NOT NULL,
+            commit_subject TEXT    NOT NULL,
+            commit_at      INTEGER NOT NULL,
+            PRIMARY KEY (repo_id, head_sha, dir, name)
+          )}
+      );
+    },
+  },
 );
 
 sub run {

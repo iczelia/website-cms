@@ -111,6 +111,31 @@ my $d = Iczelia::Analytics::dashboard_data($db, range => 'all');
 is($d->{totals}{views}, 4, 'totals.views = 4');
 is($d->{totals}{bots},  1, 'totals.bots = 1');
 ok(scalar(@{$d->{top_paths}}) >= 2, 'top_paths populated');
+
+# 5b. ASSET_FILTER: asset / second-fetch paths must not appear in
+# "most common destinations" even when they have higher view counts
+# than real pages.
+$db->do_(
+  q{INSERT INTO analytics_daily(date, path, views, uniques, bots)
+    VALUES (date('now'), ?, ?, ?, 0)},
+  '/cms.css', 9999, 9999,
+);
+$db->do_(
+  q{INSERT INTO analytics_daily(date, path, views, uniques, bots)
+    VALUES (date('now'), ?, ?, ?, 0)},
+  '/assets-1024x768/banner.png', 8888, 8888,
+);
+$db->do_(
+  q{INSERT INTO analytics_daily(date, path, views, uniques, bots)
+    VALUES (date('now'), ?, ?, ?, 0)},
+  '/media/foo.jpg', 7777, 7777,
+);
+my $df = Iczelia::Analytics::dashboard_data($db, range => 'all');
+ok(!(grep { $_->{path} =~ m{^/(?:cms\.|assets-|media/)} }
+        @{$df->{top_paths}}),
+  'top_paths excludes asset / media / cms.* paths');
+ok((grep { $_->{path} eq '/blog/foo/' } @{$df->{top_paths}}),
+  'real pages still show up in top_paths');
 is($d->{ua}{browsers}[0]{label}, 'Firefox', 'top browser is Firefox');
 is($d->{ua}{browsers}[0]{count}, 3,         'top browser count');
 ok(scalar(@{$d->{ua}{bots}}) >= 1, 'bot breakdown populated');

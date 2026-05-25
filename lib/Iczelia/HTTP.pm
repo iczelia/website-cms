@@ -308,6 +308,13 @@ my %STATUS_TEXT = (
 
 sub write_response {
   my ($io, $resp) = @_;
+
+  # Streaming response path: handler is a coderef that emits HTTP/1.1
+  # chunked-encoded data through a writer. Used by the backup export
+  # (and anything else where buffering the full body in memory or
+  # holding the nginx upstream silent for >read-timeout is fatal).
+  return _write_streamed($io, $resp) if ref($resp->{stream}) eq 'CODE';
+
   my $status = $resp->{status}       || 200;
   my $text   = $STATUS_TEXT{$status} || 'OK';
   my $body   = $resp->{body};
@@ -316,10 +323,8 @@ sub write_response {
     $body = Encode::encode('UTF-8', $body);
   }
 
-  my $hdrs = $resp->{headers} || {};
+  my $hdrs = _common_headers($resp);
   $hdrs->{'Content-Length'} = length $body;
-  $hdrs->{'Content-Type'} //= 'text/html; charset=utf-8';
-  $hdrs->{'Date'}         //= Iczelia::Time::http_date();
   if ($resp->{_keep_alive}) {
     $hdrs->{'Connection'} //= 'keep-alive';
     $hdrs->{'Keep-Alive'} //=
@@ -329,8 +334,25 @@ sub write_response {
   else {
     $hdrs->{'Connection'} //= 'close';
   }
-  $hdrs->{'Server'} //= 'iczelia/0.1';
 
+  my $head = _build_response_head($resp, $hdrs);
+  print $io $head;
+  print $io $body unless ($resp->{method_was} || '') eq 'HEAD';
+}
+
+sub _common_headers {
+  my ($resp) = @_;
+  my $hdrs = $resp->{headers} || {};
+  $hdrs->{'Content-Type'} //= 'text/html; charset=utf-8';
+  $hdrs->{'Date'}         //= Iczelia::Time::http_date();
+  $hdrs->{'Server'}       //= 'iczelia/0.1';
+  return $hdrs;
+}
+
+sub _build_response_head {
+  my ($resp, $hdrs) = @_;
+  my $status = $resp->{status}       || 200;
+  my $text   = $STATUS_TEXT{$status} || 'OK';
   my $head = "HTTP/1.1 $status $text" . CRLF;
   for my $k (sort keys %$hdrs) {
     my $v  = $hdrs->{$k};
@@ -348,9 +370,46 @@ sub write_response {
     }
   }
   $head .= CRLF;
+  return $head;
+}
 
-  print $io $head;
-  print $io $body unless ($resp->{method_was} || '') eq 'HEAD';
+# Chunked-encoded streamed write. The handler's coderef is called with
+# a writer sub; each call flushes one HTTP chunk to the socket so the
+# upstream (nginx, in front of the daemon) keeps seeing data and never
+# trips its proxy_read_timeout. Returning from the coderef -- or
+# throwing -- emits the zero-length terminator.
+sub _write_streamed {
+  my ($io, $resp) = @_;
+  my $hdrs = _common_headers($resp);
+  $hdrs->{'Transfer-Encoding'} = 'chunked';
+  delete $hdrs->{'Content-Length'};
+  # Keep-alive on a streamed response would require length-tracking on
+  # the trailer; not worth the complexity for what is always an admin
+  # download. Close the connection at end-of-stream.
+  $hdrs->{'Connection'} = 'close';
+
+  print $io _build_response_head($resp, $hdrs);
+  eval { $io->autoflush(1); 1 };
+
+  return if ($resp->{method_was} || '') eq 'HEAD';
+
+  my $writer = sub {
+    my ($data) = @_;
+    return 0 unless defined $data;
+    if (Encode::is_utf8($data)) {
+      $data = Encode::encode('UTF-8', $data);
+    }
+    my $n = length $data;
+    return 0 unless $n;
+    print $io sprintf('%X', $n) . CRLF . $data . CRLF;
+    return $n;
+  };
+
+  eval { $resp->{stream}->($writer); 1 }
+    or warn "stream handler error: $@";
+
+  # Trailer: zero-length chunk + empty trailer headers.
+  print $io '0' . CRLF . CRLF;
 }
 
 # Defense against header injection via tainted redirect URLs / cookies.

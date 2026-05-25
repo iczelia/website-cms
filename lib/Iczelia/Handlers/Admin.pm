@@ -31,6 +31,8 @@ use Iczelia::Handlers::Admin::Posts     ();
 use Iczelia::Handlers::Admin::Series    ();
 use Iczelia::Handlers::Admin::Settings  ();
 use Iczelia::Handlers::Admin::Subpages  ();
+use Iczelia::Handlers::Admin::Git       ();
+use Iczelia::Handlers::Admin::Upload    ();
 use Iczelia::Handlers::Admin::Webring   ();
 
 use constant DASHBOARD_POSTS_LIMIT => 50;
@@ -62,6 +64,8 @@ sub register {
 
   Iczelia::Handlers::Admin::Dynamic->register($router, $ctx);
   Iczelia::Handlers::Admin::Subpages->register($router, $ctx);
+  Iczelia::Handlers::Admin::Git->register($router, $ctx);
+  Iczelia::Handlers::Admin::Upload->register($router, $ctx);
   Iczelia::Handlers::Admin::Highlight->register($router, $ctx);
 }
 

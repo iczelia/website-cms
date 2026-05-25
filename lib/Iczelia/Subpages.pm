@@ -18,7 +18,9 @@ package Iczelia::Subpages;
 use strict;
 use warnings;
 use DBI                   ();
+use Encode                ();
 use IO::Uncompress::Unzip ();
+use Iczelia::Highlight    ();
 
 # Static subpages: admin-uploaded HTML/CSS/JS bundles served under
 # /<slug>/. Bundle files live in the subpage_files table; binary
@@ -68,7 +70,7 @@ my %CT = (
 my %RESERVED = map {$_ => 1} qw(
   admin api blog journal series media vendor fonts webring guestbook
   updates search about cv posts healthz favicon robots sitemap feed
-  cms pub static assets css js img images
+  cms pub static assets css js img images git
 );
 
 sub valid_slug {
@@ -208,6 +210,48 @@ sub icon_for {
   return $EXT_ICON{$ext} || 'file.png';
 }
 
+sub icon_for_entry {
+  my ($name, %meta) = @_;
+  return 'folder.png' if ($meta{type} // '') eq 'dir';
+  return 'file.png' unless defined $name && length $name;
+  return icon_for($name) if is_readme_name($name);
+
+  my $ct = $meta{content_type} // '';
+  return 'image.png'   if $ct =~ m{\Aimage/};
+  return 'audio.png'   if $ct =~ m{\Aaudio/};
+  return 'video.png'   if $ct =~ m{\Avideo/};
+  return 'pdf.png'     if $ct =~ m{\Aapplication/pdf\b};
+  return 'archive.png' if $ct =~ m{\Aapplication/(?:zip|gzip|x-bzip2|x-xz|x-7z-compressed|x-rar|x-tar)\b};
+  return 'font.png'    if $ct =~ m{\A(?:font/|application/(?:font|vnd\.ms-fontobject))};
+  return 'exec.png'    if $ct =~ m{\Aapplication/(?:wasm|x-elf)\b};
+  return 'file.png'    if $meta{is_binary};
+
+  my $lang = $meta{lang};
+  if (defined $lang && length $lang) {
+    return 'lhaskell.png' if $lang eq 'haskell' && $name =~ /\.lhs\z/i;
+    return 'python.png'   if $lang eq 'python';
+    return 'perl.png'     if $lang eq 'perl';
+    return 'php.png'      if $lang eq 'php';
+    return 'java.png'     if $lang eq 'java';
+    return 'haskell.png'  if $lang eq 'haskell';
+    return 'scheme.png'   if $lang eq 'lisp';
+    return 'shell.png'    if $lang eq 'bash';
+    return 'sql.png'      if $lang eq 'sql';
+    return 'css.png'      if $lang eq 'css';
+    return 'xml.png'      if $lang eq 'html' && $ct =~ m{\Aapplication/xml\b};
+    return 'image.png'    if $lang eq 'html' && $ct =~ m{\Aimage/svg\+xml\b};
+    return 'html.png'     if $lang eq 'html';
+    return 'xml.png'      if $lang =~ /\A(?:json|yaml|toml)\z/;
+    return 'makefile.png' if $lang eq 'make';
+    return 'patch.png'    if $lang eq 'diff';
+    return 'text.png'     if $lang eq 'markdown';
+    return 'code.png';
+  }
+
+  return 'text.png'    if is_text_type($ct);
+  return icon_for($name);
+}
+
 sub fmt_size {
   my ($n) = @_;
   return '-' unless defined $n;
@@ -241,6 +285,31 @@ sub content_type_for {
   return $CT{lc $ext} || 'application/octet-stream';
 }
 
+sub detect_file_type {
+  my ($path, $content) = @_;
+  my $ct = content_type_for($path);
+  my $binary;
+  if (defined $content) {
+    my $magic = _magic_type($content);
+    $ct = _prefer_magic_type($path, $ct, $magic) if defined $magic;
+    $binary = _content_looks_binary($content, $ct) ? 1 : 0;
+    if ($ct eq 'application/octet-stream' && !$binary) {
+      $ct = 'text/plain; charset=utf-8';
+    }
+  }
+  else {
+    $binary = is_text_type($ct) ? 0 : 1;
+  }
+  my $lang = $binary ? undef : Iczelia::Highlight::lang_for_file($path, $content);
+  return {
+    content_type => $ct,
+    is_binary    => $binary,
+    lang         => $lang,
+    icon         => icon_for_entry($path,
+      content_type => $ct, is_binary => $binary, lang => $lang),
+  };
+}
+
 sub is_text_type {
   my ($ct) = @_;
   return 0 unless defined $ct;
@@ -272,8 +341,56 @@ sub sanitize_rel_path {
 
 sub _is_binary {
   my ($content, $ct) = @_;
-  return 1 if index($content, "\0") >= 0;
-  return is_text_type($ct) ? 0 : 1;
+  return _content_looks_binary($content, $ct);
+}
+
+sub _content_looks_binary {
+  my ($content, $ct) = @_;
+  return 1 if defined $content && index($content, "\0") >= 0;
+  return 0 if is_text_type($ct);
+  return 0 unless defined $content && length $content;
+  my $sample = substr($content, 0, 8192);
+  return 0 if eval { Encode::decode('UTF-8', $sample, Encode::FB_CROAK()); 1 };
+  my $ctrl = () = $sample =~ /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+  return ($ctrl / (length($sample) || 1)) > 0.02 ? 1 : 0;
+}
+
+sub _magic_type {
+  my ($c) = @_;
+  return undef unless defined $c && length $c;
+  return 'image/png'              if $c =~ /\A\x89PNG\r\n\x1a\n/s;
+  return 'image/jpeg'             if $c =~ /\A\xff\xd8\xff/s;
+  return 'image/gif'              if $c =~ /\AGIF8[79]a/s;
+  return 'image/webp'             if $c =~ /\ARIFF....WEBP/s;
+  return 'image/bmp'              if $c =~ /\ABM/s;
+  return 'image/x-icon'           if $c =~ /\A\x00\x00\x01\x00/s;
+  return 'image/tiff'             if $c =~ /\A(?:II\*\x00|MM\x00\*)/s;
+  return 'application/pdf'        if $c =~ /\A%PDF-/s;
+  return 'application/zip'        if $c =~ /\APK\x03\x04/s;
+  return 'application/gzip'       if $c =~ /\A\x1f\x8b/s;
+  return 'application/x-bzip2'    if $c =~ /\ABZh/s;
+  return 'application/x-xz'       if $c =~ /\A\xfd7zXZ\x00/s;
+  return 'application/x-7z-compressed' if $c =~ /\A7z\xbc\xaf\x27\x1c/s;
+  return 'application/x-rar'      if $c =~ /\ARar!\x1a\x07/s;
+  return 'application/x-tar'      if length($c) > 265 && substr($c, 257, 5) eq 'ustar';
+  return 'application/wasm'       if $c =~ /\A\x00asm/s;
+  return 'application/x-elf'      if $c =~ /\A\x7fELF/s;
+  return 'application/vnd.sqlite3' if $c =~ /\ASQLite format 3\x00/s;
+  return 'audio/ogg'              if $c =~ /\AOggS/s;
+  return 'audio/mpeg'             if $c =~ /\A(?:ID3|\xff[\xfb\xf3\xf2])/s;
+  return 'application/xml'        if $c =~ /\A(?:\xEF\xBB\xBF)?\s*<\?xml\b/is;
+  return 'text/html; charset=utf-8'
+    if $c =~ /\A(?:\xEF\xBB\xBF)?\s*(?:<!doctype\s+html\b|<html\b)/is;
+  return undef;
+}
+
+sub _prefer_magic_type {
+  my ($path, $by_ext, $magic) = @_;
+  return $by_ext unless defined $magic && length $magic;
+  return $magic if !defined $by_ext || $by_ext eq 'application/octet-stream';
+  return $magic if $magic =~ m{\A(?:image|audio|video|font)/};
+  return $magic if $magic =~ m{\Aapplication/(?:pdf|zip|gzip|x-|wasm|vnd\.sqlite3)};
+  return $by_ext;
 }
 
 # Drop a single shared top-level directory (the common "everything is
@@ -342,14 +459,14 @@ sub extract_zip {
     my $rel = sanitize_rel_path($r->[0]);
     next unless defined $rel;
     next if $seen{$rel}++;
-    my $ct = content_type_for($rel);
+    my $type = detect_file_type($rel, $r->[1]);
     push @files,
       {
       path         => $rel,
       content      => $r->[1],
-      content_type => $ct,
+      content_type => $type->{content_type},
       size         => length($r->[1]),
-      is_binary    => _is_binary($r->[1], $ct),
+      is_binary    => $type->{is_binary},
       };
   }
   return (undef, 'zip contains no usable files') unless @files;
@@ -446,7 +563,8 @@ sub put_file {
   my $rel = sanitize_rel_path($path);
   return undef unless defined $rel;
   $content = '' unless defined $content;
-  my $ct = $opt{content_type} || content_type_for($rel);
+  my $det = detect_file_type($rel, $content);
+  my $ct = $opt{content_type} || $det->{content_type};
   my $bin =
       exists $opt{is_binary}
     ? ($opt{is_binary} ? 1 : 0)
@@ -508,7 +626,8 @@ sub directory_entries {
   $dir =~ s{/+$}{};
   my $prefix = length($dir) ? "$dir/" : '';
   my $rows = $db->all(
-    q{SELECT path, size, updated_at, content_type, is_binary
+    q{SELECT path, size, updated_at, content_type, is_binary,
+             SUBSTR(content, 1, 8192) AS sniff
         FROM subpage_files WHERE subpage_id=? ORDER BY path}, $id
   );
   my (%dirs, @files);
@@ -531,6 +650,7 @@ sub directory_entries {
         path         => $r->{path},
         content_type => $r->{content_type},
         is_binary    => $r->{is_binary},
+        lang         => Iczelia::Highlight::lang_for_file($rest, $r->{sniff}),
         };
     }
   }

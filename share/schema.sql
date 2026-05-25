@@ -174,6 +174,54 @@ CREATE TABLE IF NOT EXISTS subpage_files (
 );
 CREATE INDEX IF NOT EXISTS subpage_files_pid ON subpage_files(subpage_id);
 
+CREATE TABLE IF NOT EXISTS git_repos (
+  id                INTEGER PRIMARY KEY,
+  slug              TEXT    NOT NULL UNIQUE,
+  title             TEXT    NOT NULL DEFAULT '',
+  owner             TEXT    NOT NULL DEFAULT '',
+  description       TEXT    NOT NULL DEFAULT '',
+  default_branch    TEXT    NOT NULL DEFAULT 'main',
+  mirror_url        TEXT,
+  mirror_interval_s INTEGER NOT NULL DEFAULT 3600,
+  last_pulled_at    INTEGER,
+  last_pull_status  TEXT,
+  last_pull_error   TEXT,
+  head_sha          TEXT,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS git_repos_mirror_due
+  ON git_repos(last_pulled_at) WHERE mirror_url IS NOT NULL;
+
+-- Per-HEAD cache of "newest commit that modified <dir>/<name>". Keyed
+-- on head_sha so a mirror pull (which deletes stale-sha rows) drops the
+-- cache automatically; no TTL needed.
+CREATE TABLE IF NOT EXISTS git_commit_cache (
+  repo_id        INTEGER NOT NULL REFERENCES git_repos(id) ON DELETE CASCADE,
+  head_sha       TEXT    NOT NULL,
+  dir            TEXT    NOT NULL,
+  name           TEXT    NOT NULL,
+  commit_sha     TEXT    NOT NULL,
+  commit_subject TEXT    NOT NULL,
+  commit_at      INTEGER NOT NULL,
+  PRIMARY KEY (repo_id, head_sha, dir, name)
+);
+
+-- Resumable chunked upload sessions used by /admin/upload/* so big
+-- archives (backup imports, subpage zip bundles, future git imports)
+-- can land without bumping the request-cap or the nginx body limit.
+-- Each row binds an upload to an admin session; the assembled bytes
+-- live at <tmp-dir>/upload-<id>.dat until claimed by a real handler.
+CREATE TABLE IF NOT EXISTS upload_sessions (
+  id            TEXT    PRIMARY KEY,
+  sid           TEXT    NOT NULL,
+  filename      TEXT,
+  size          INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  finalized_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS upload_sessions_created ON upload_sessions(created_at);
+
 -- Admin-defined highlighter languages. Word-list-only definitions; the
 -- runtime quotemetas every token before building regex rules.
 CREATE TABLE IF NOT EXISTS highlight_langs (

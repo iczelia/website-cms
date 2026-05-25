@@ -44,7 +44,7 @@ user:
 
 dirs:
 	sudo install -d -o $(USER) -g $(USER) -m 0755 $(PREFIX) $(PREFIX)/bin $(PREFIX)/lib $(PREFIX)/share
-	sudo install -d -o $(USER) -g $(USER) -m 0755 $(VARDIR) $(VARDIR)/media $(VARDIR)/tmp
+	sudo install -d -o $(USER) -g $(USER) -m 0755 $(VARDIR) $(VARDIR)/media $(VARDIR)/tmp $(VARDIR)/git
 	sudo install -d -o root -g root -m 0755 $(CONFDIR)
 
 files:

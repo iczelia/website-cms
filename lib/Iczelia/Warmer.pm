@@ -27,6 +27,7 @@ use Iczelia::Tex;
 use Iczelia::Cache;
 use Iczelia::Markup;
 use Iczelia::SafeMarkup;
+use Iczelia::Git::Mirrors ();
 use Iczelia::Handlers::Admin::Cache qw(REBUILD_PHASE);
 
 # Snapshot key updated at the start of each pass and again after
@@ -154,8 +155,33 @@ sub _pass {
     1;
   } or $self->_log("compress pass error: $@");
 
+  # Periodic git mirror pull. var/git/ holds the bare repos; the DB
+  # row's mirror_interval_s decides what's due. Per-repo flock keeps
+  # us out of the way of any concurrent admin "pull now" action.
+  if (!$opt{force}) {
+    eval {
+      Iczelia::Git::Mirrors::pump(
+        db       => $db,
+        var_dir  => _var_dir($self->{cfg}),
+        on_log   => sub { $self->_log($_[0]) },
+        max_jobs => 4,
+      );
+      1;
+    } or $self->_log("git mirror pass error: $@");
+  }
+
   $db->disconnect;
   return scalar @missing;
+}
+
+# Derive the var/ directory from cfg. Iczelia::Config sets `tmp-dir`
+# as $project_root/var/tmp by default; the parent is our git host.
+sub _var_dir {
+  my ($cfg) = @_;
+  my $tmp = $cfg->{'tmp-dir'};
+  return $tmp if !defined $tmp;
+  (my $var = $tmp) =~ s{/tmp/?\z}{};
+  return $var;
 }
 
 sub _save_stats {

@@ -33,6 +33,7 @@ RUN apt-get update && \
         libbrotli1 \
         ca-certificates \
         curl \
+        git \
         sqlite3 \
         texlive-latex-base \
         texlive-latex-recommended \
@@ -80,7 +81,8 @@ RUN rm -rf \
 
 # Non-root user for the runtime
 RUN useradd --system --uid 1000 --shell /usr/sbin/nologin --home-dir /var/lib/iczelia iczelia \
-    && install -d -o iczelia -g iczelia -m 0755 /var/lib/iczelia /var/lib/iczelia/media /var/lib/iczelia/tmp
+    && install -d -o iczelia -g iczelia -m 0755 \
+        /var/lib/iczelia /var/lib/iczelia/media /var/lib/iczelia/tmp /var/lib/iczelia/git
 
 WORKDIR /opt/iczelia
 COPY bin/    bin/

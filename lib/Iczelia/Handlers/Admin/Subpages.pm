@@ -21,6 +21,7 @@ use JSON::PP          ();
 use Encode            ();
 use Iczelia::HTTP     ();
 use Iczelia::Subpages ();
+use Iczelia::Upload   ();
 use Iczelia::Time     qw(ts_fmt);
 use Iczelia::Util     qw(escape_url);
 
@@ -57,9 +58,8 @@ sub _render_list {
     title       => 'static subpages',
     subpages    => $rows,
     error          => $opt{error},
-    slug_value     => (defined $opt{slug}     ? $opt{slug}     : ''),
-    title_value    => (defined $opt{title}    ? $opt{title}    : ''),
-    zip_path_value => (defined $opt{zip_path} ? $opt{zip_path} : ''),
+    slug_value     => (defined $opt{slug}  ? $opt{slug}  : ''),
+    title_value    => (defined $opt{title} ? $opt{title} : ''),
     csrf_form      => $ctx->auth->csrf_token($sid, 'subpage:new'),
   );
 }
@@ -71,10 +71,7 @@ sub _create {
 
   my $slug  = _norm_slug($req->{params}{slug});
   my $title = defined $req->{params}{title} ? $req->{params}{title} : '';
-  my @form  = (
-    slug => $slug, title => $title,
-    zip_path => $req->{params}{zip_path},
-  );
+  my @form  = (slug => $slug, title => $title);
 
   return _render_list($ctx, $req, @form,
     error => 'invalid slug: use a-z, 0-9 and dashes, and avoid reserved names')
@@ -83,14 +80,14 @@ sub _create {
     error => "the slug '$slug' is already in use")
     if _slug_taken($ctx, $slug, 0);
 
-  my ($zip, $src_err, $from_fs) = _bundle_bytes($req);
+  my ($zip, $src_err, $unlimited) = _bundle_bytes($ctx, $req);
   return _render_list($ctx, $req, @form, error => $src_err) if $src_err;
   return _render_list($ctx, $req, @form,
-    error => 'attach a .zip bundle or import one from a server path')
+    error => 'attach a .zip bundle (chunked uploader handles any size)')
     unless defined $zip;
 
   my ($files, $zerr) =
-    Iczelia::Subpages::extract_zip($zip, unlimited => $from_fs);
+    Iczelia::Subpages::extract_zip($zip, unlimited => $unlimited);
   return _render_list($ctx, $req, @form, error => "zip: $zerr") if $zerr;
 
   my $id = Iczelia::Subpages::create($ctx->db, $slug, $title, $files);
@@ -173,7 +170,9 @@ sub _render_edit {
         is_file      => 1,
         is_parent    => 0,
         name         => $e->{name},
-        icon         => Iczelia::Subpages::icon_for($e->{name}),
+        icon         => Iczelia::Subpages::icon_for_entry($e->{name},
+          content_type => $e->{content_type}, is_binary => $e->{is_binary},
+          lang => $e->{lang}),
         path         => $e->{path},
         mtime        => Iczelia::Subpages::fmt_mtime($e->{updated_at}),
         size         => Iczelia::Subpages::fmt_size($e->{size}),
@@ -280,13 +279,13 @@ sub _rezip {
   my $err = $ctx->auth->require_csrf($req, "subpage:rezip:$id");
   return $err if $err;
 
-  my ($zip, $src_err, $from_fs) = _bundle_bytes($req);
+  my ($zip, $src_err, $unlimited) = _bundle_bytes($ctx, $req);
   return _render_edit($ctx, $req, error => $src_err) if $src_err;
   return _render_edit($ctx, $req,
-    error => 'attach a .zip bundle or import one from a server path')
+    error => 'attach a .zip bundle (chunked uploader handles any size)')
     unless defined $zip;
   my ($files, $zerr) =
-    Iczelia::Subpages::extract_zip($zip, unlimited => $from_fs);
+    Iczelia::Subpages::extract_zip($zip, unlimited => $unlimited);
   return _render_edit($ctx, $req, error => "zip: $zerr") if $zerr;
 
   Iczelia::Subpages::replace_files($ctx->db, $id, $files);
@@ -412,36 +411,42 @@ sub _slug_taken {
   return 0;
 }
 
-# Bundle bytes for create / rezip: an uploaded file, or a .zip on the
-# server's filesystem. Returns ($bytes, $error, $from_fs); a filesystem
-# import is uncapped, so $from_fs drives the extract_zip limit bypass.
+# Bundle bytes for create / rezip. Two sources:
+#   (a) /admin/upload/* chunked session via params.upload_id -- this is
+#       the recommended path for anything over the request-cap, and
+#       counts as unlimited (the upload module owns its own size cap).
+#   (b) classic multipart file upload (small bundles, JS off).
+# Returns ($bytes, $error, $unlimited_flag).
 sub _bundle_bytes {
-  my ($req) = @_;
+  my ($ctx, $req) = @_;
+
+  my $upload_id = $req->{params}{upload_id};
+  if (defined $upload_id && length $upload_id) {
+    my $u = Iczelia::Upload->new(
+      db      => $ctx->db,
+      tmp_dir => $ctx->cfg->{'tmp-dir'} || '/tmp',
+    );
+    $u->finalize($upload_id, $req->{auth_sid});
+    my ($path, $cerr) = $u->claim($upload_id, $req->{auth_sid});
+    return (undef, "upload: $cerr") if $cerr;
+    open my $fh, '<:raw', $path or do {
+      $u->cleanup($upload_id, $req->{auth_sid});
+      return (undef, "open: $!");
+    };
+    local $/;
+    my $data = <$fh>;
+    close $fh;
+    $u->cleanup($upload_id, $req->{auth_sid});
+    return (undef, 'upload was empty')
+      unless defined $data && length $data;
+    return ($data, undef, 1);
+  }
 
   my @up = @{$req->{uploads} || []};
   return ($up[0]{body}, undef, 0)
     if @up && defined $up[0]{body} && length $up[0]{body};
 
-  my $path = $req->{params}{zip_path};
-  return (undef, undef, 0) unless defined $path && $path =~ /\S/;
-  $path =~ s/^\s+//;
-  $path =~ s/\s+$//;
-
-  return (undef, 'the server path must be absolute')
-    unless $path =~ m{^/} && $path !~ /\0/;
-  return (undef, "no file at $path")              unless -e $path;
-  return (undef, 'the server path is not a file') unless -f _;
-  return (undef, 'the server file is not readable by the daemon')
-    unless -r _;
-
-  open my $fh, '<:raw', $path
-    or return (undef, 'could not open the server file');
-  local $/;
-  my $data = <$fh>;
-  close $fh;
-  return (undef, 'the server file is empty')
-    unless defined $data && length $data;
-  return ($data, undef, 1);
+  return (undef, undef, 0);
 }
 
 sub _json {

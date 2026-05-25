@@ -17,15 +17,17 @@
 package Iczelia::Handlers::Backup;
 use strict;
 use warnings;
-use Iczelia::HTTP ();
-use Iczelia::Util qw(escape_url);
-use File::Path    qw(make_path remove_tree);
-use File::Spec    ();
-use File::Copy    qw(move);
-use Digest::SHA   qw(sha256_hex);
-use JSON::PP      ();
-use DBI           ();
-use Archive::Tar  ();
+use Iczelia::HTTP      ();
+use Iczelia::TarStream ();
+use Iczelia::Upload    ();
+use Iczelia::Util      qw(escape_url);
+use File::Path         qw(make_path remove_tree);
+use File::Spec         ();
+use File::Copy         qw(move);
+use Digest::SHA        qw(sha256_hex);
+use JSON::PP           ();
+use DBI                ();
+use Archive::Tar       ();
 
 # Backup: VACUUM INTO snapshot, ephemeral tables stripped, tar with
 # media/. Restore atomically swaps the live DB and media/ tree.
@@ -76,6 +78,10 @@ sub _export {
   my $work  = "$tmp_dir/iczelia-export-$stamp.$$";
   make_path($work);
 
+  # Build the snapshot DB up front (fast: VACUUM INTO + ephemeral
+  # scrub). If this fails the handler returns 500 before any response
+  # bytes are on the wire; once we start streaming we can't change
+  # status anymore.
   my $snap = "$work/site.db";
   eval {
     $ctx->db->dbh->do(q{VACUUM INTO ?}, undef, $snap);
@@ -102,19 +108,10 @@ sub _export {
     }
   );
 
-  # Build the tar archive in memory via Archive::Tar; no shell-out.
-  my $tar = Archive::Tar->new;
-  $tar->add_data('site.db',       _slurp_raw($snap));
-  $tar->add_data('MANIFEST.json', $manifest);
-  for my $fn (@media_files) {
-    my $data = eval {_slurp_raw("$media_src/$fn")};
-    next unless defined $data;
-    $tar->add_data("media/$fn", $data);
-  }
-  my $body = $tar->write;
-  remove_tree($work);
-  return Iczelia::HTTP::error(500, "tar build failed") unless defined $body;
-
+  # Streamed response: each tar entry hits the socket immediately so
+  # the upstream (nginx in front of the daemon) keeps seeing bytes
+  # and never trips its proxy_read_timeout, even on multi-GB media
+  # libraries. Memory footprint stays bounded at one 64 KB chunk.
   return {
     status  => 200,
     headers => {
@@ -123,8 +120,32 @@ sub _export {
         qq{attachment; filename="iczelia-backup-$stamp.tar"},
       'Cache-Control' => 'no-store',
     },
-    body      => $body,
     _no_cache => 1,
+    stream    => sub {
+      my ($w) = @_;
+      my $ts = Iczelia::TarStream->new(write => $w);
+      eval {
+        # site.db: stream from disk so a giant DB never lands in RAM.
+        my $snap_size = -s $snap;
+        if (defined $snap_size && open my $fh, '<:raw', $snap) {
+          $ts->add_fh('site.db', $fh, $snap_size);
+          close $fh;
+        }
+        $ts->add_data('MANIFEST.json', $manifest);
+        for my $fn (@media_files) {
+          my $path = "$media_src/$fn";
+          my $size = -s $path;
+          next unless defined $size;
+          if (open my $fh, '<:raw', $path) {
+            $ts->add_fh("media/$fn", $fh, $size);
+            close $fh;
+          }
+        }
+        $ts->finish;
+        1;
+      } or warn "backup export stream error: $@";
+      remove_tree($work);
+    },
   };
 }
 
@@ -196,19 +217,54 @@ sub _import {
   my ($ctx, $req) = @_;
   my $err = $ctx->auth->require_csrf($req, 'backup:import');
   return $err if $err;
-  my @files = @{$req->{uploads} || []};
-  return Iczelia::HTTP::error(400, 'no file') unless @files;
-  my $f = $files[0];
 
   my $tmp_dir = $ctx->cfg->{'tmp-dir'} || '/tmp';
   make_path($tmp_dir) unless -d $tmp_dir;
   my $work = "$tmp_dir/iczelia-import.$$";
   make_path($work);
   my $tar_path = "$work/upload.tar";
-  open my $fh, '>:raw', $tar_path
-    or do {remove_tree($work); return Iczelia::HTTP::error(500, "write: $!")};
-  print $fh $f->{body};
-  close $fh;
+
+  # Two entry paths:
+  #   (a) classic multipart upload (small tarballs, JS off): the
+  #       chunked uploader is the default, but if it's bypassed we
+  #       still accept the full body in one POST.
+  #   (b) chunked uploader: the JS pushes 2 MB slices to
+  #       /admin/upload/chunk, then submits this form with an
+  #       upload_id field. We claim the assembled file by reference
+  #       so a 4 GB import never lands in $req->{uploads}.
+  my $upload_id = $req->{params}{upload_id};
+  my $upload    = Iczelia::Upload->new(db => $ctx->db, tmp_dir => $tmp_dir);
+  my $assembled;
+  if (defined $upload_id && length $upload_id) {
+    $upload->finalize($upload_id, $req->{auth_sid});
+    my ($path, $cerr) = $upload->claim($upload_id, $req->{auth_sid});
+    if (!$path) {
+      remove_tree($work);
+      return Iczelia::HTTP::error(400, "upload: $cerr");
+    }
+    # Move the assembled chunk file into the work dir; the import
+    # path expects $work/upload.tar. rename() is atomic on the same
+    # filesystem (var/tmp), so no data copy.
+    unless (rename($path, $tar_path)) {
+      $upload->cleanup($upload_id, $req->{auth_sid});
+      remove_tree($work);
+      return Iczelia::HTTP::error(500, "stage upload: $!");
+    }
+    $upload->cleanup($upload_id, $req->{auth_sid});
+    $assembled = 1;
+  }
+  else {
+    my @files = @{$req->{uploads} || []};
+    if (!@files) {
+      remove_tree($work);
+      return Iczelia::HTTP::error(400, 'no file');
+    }
+    my $f = $files[0];
+    open my $fh, '>:raw', $tar_path
+      or do {remove_tree($work); return Iczelia::HTTP::error(500, "write: $!")};
+    print $fh $f->{body};
+    close $fh;
+  }
 
   unless (_archive_paths_safe($tar_path)) {
     remove_tree($work);

@@ -87,17 +87,12 @@
 
 {% if is_root %}  <section class="cms-subpage-section">
     <h2>replace bundle</h2>
-    <form class="cms-form" method="POST" action="/admin/subpages/{{ sp.id }}/rezip" enctype="multipart/form-data">
+    <form class="cms-form" method="POST" action="/admin/subpages/{{ sp.id }}/rezip" enctype="multipart/form-data" data-cms-upload="bundle">
       <input type="hidden" name="csrf" value="{{ csrf.rezip }}">
       <fieldset class="cms-field cms-field-text">
         <legend>bundle (.zip)</legend>
         <input type="file" name="bundle" accept=".zip,application/zip">
-        <p class="cms-help">replaces every file in this subpage with the contents of the new zip.</p>
-      </fieldset>
-      <fieldset class="cms-field cms-field-text">
-        <legend>or import from a server path</legend>
-        <input type="text" name="zip_path" maxlength="1024" placeholder="/var/lib/iczelia/bundles/site.zip">
-        <p class="cms-help">absolute path to a .zip on the server. no size limit; use this for bundles too large to upload.</p>
+        <p class="cms-help">replaces every file in this subpage with the contents of the new zip. files over ~6 MB go through the chunked uploader (no size limit, progress shown below).</p>
       </fieldset>
       <p class="cms-actions"><button type="submit" class="cms-btn cms-btn-danger" onclick="return confirm('replace all files in this subpage?')">replace bundle</button></p>
     </form>

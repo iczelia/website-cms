@@ -17,11 +17,13 @@
 package Iczelia::Handlers::Subpages;
 use strict;
 use warnings;
-use Encode            ();
-use Iczelia           ();
-use Iczelia::HTTP     ();
-use Iczelia::Subpages ();
-use Iczelia::Util     qw(escape_html escape_url);
+use Encode               ();
+use Iczelia              ();
+use Iczelia::HTTP        ();
+use Iczelia::Subpages    ();
+use Iczelia::Theme       ();
+use Iczelia::PublicListing ();
+use Iczelia::Util        qw(escape_html escape_url);
 
 # Server fallback (after the router and dynamic pages): claim
 # /<slug>/... when <slug> is a static subpage. Returns a response, or
@@ -39,8 +41,8 @@ sub serve {
   my $sp = Iczelia::Subpages::get_by_slug($ctx->db, $slug)
     or return undef;
 
-  if (my $want = _wanted_theme($req)) {
-    return _set_theme_response($req, $want);
+  if (my $want = Iczelia::Theme::wanted_from_query($req)) {
+    return Iczelia::Theme::apply_response($req, $want);
   }
 
   if (!defined $rest) {
@@ -109,51 +111,10 @@ sub _redirect {
   return Iczelia::HTTP::redirect($to, status => 301);
 }
 
-# Theme persistence without JavaScript:
-#   * cookie `iczelia_theme` (light|dark, missing = auto/system)
-#   * `?set-theme=light|dark|auto` writes the cookie and 303-redirects
-#     back to the clean URL so the next render picks up the new value.
-
-use constant THEME_COOKIE => 'iczelia_theme';
-
-sub _theme_from_cookie {
-  my ($req) = @_;
-  my $v = $req->{cookies} && $req->{cookies}{+THEME_COOKIE};
-  return $v && ($v eq 'light' || $v eq 'dark') ? $v : 'auto';
-}
-
-sub _wanted_theme {
-  my ($req) = @_;
-  my $v = $req->{qparams} && $req->{qparams}{'set-theme'};
-  return undef unless defined $v;
-  return undef unless $v eq 'light' || $v eq 'dark' || $v eq 'auto';
-  return $v;
-}
-
-sub _set_theme_response {
-  my ($req, $value) = @_;
-  my %c = (
-    name     => THEME_COOKIE,
-    path     => '/',
-    samesite => 'Lax',
-  );
-  if ($value eq 'auto') {
-    $c{value}   = '';
-    $c{max_age} = 0;
-  }
-  else {
-    $c{value}   = $value;
-    $c{max_age} = 60 * 60 * 24 * 365;
-  }
-  $c{secure} = 1 if Iczelia::HTTP::is_https($req);
-  my $resp = Iczelia::HTTP::redirect($req->{path}, status => 303);
-  $resp->{cookies}   = [Iczelia::HTTP::make_cookie(%c)];
-  $resp->{_no_cache} = 1;
-  return $resp;
-}
-
 # Apache-style directory index for /<slug>/<dir>/ when the subpage has
-# the listing toggle on and no index.html exists at that depth.
+# the listing toggle on and no index.html exists at that depth. Builds
+# row hashes and delegates the actual HTML scaffold to PublicListing so
+# the git tree view renders with the identical chrome.
 sub _render_listing {
   my ($ctx, $sp, $rest, $req) = @_;
   my $slug = $sp->{slug};
@@ -182,48 +143,16 @@ sub _render_listing {
   }
 
   my $url_path = "/$slug/" . (length $dir ? "$dir/" : '');
-  my $theme    = _theme_from_cookie($req // {});
-  return {
-    status  => 200,
-    headers => {
-      'Content-Type'  => 'text/html; charset=utf-8',
-      'Cache-Control' => 'no-cache',
-      'Vary'          => 'Cookie',
-    },
-    body => _listing_html($url_path, $dir, $entries, $readme,
-      _footer_for($ctx->db), $theme),
-    _no_cache => 1,
-  };
-}
-
-sub _footer_for {
-  my ($db) = @_;
-  my $author = $db->setting('site.author') // 'Kamila Szewczyk';
-  my $handle = $db->setting('site.title')  // 'iczelia';
-  my $email  = $db->setting('site.email');
-  my $start  = $db->setting('site.copyright_start') // 2019;
-  my $year   = (gmtime)[5] + 1900;
-  my $line   = "copyright (c) $start - $year, $author ($handle)";
-  $line .= ", $email" if defined $email && length $email;
-  my $ver = $Iczelia::VERSION // '0.1';
-  return "$line | iczelia cms v$ver";
-}
-
-sub _listing_html {
-  my ($url_path, $dir, $entries, $readme, $footer, $theme) = @_;
-  $theme //= 'auto';
-  my $title   = "Index of $url_path";
-  my $esc_ttl = escape_html($title);
-  my $html_class = $theme eq 'light' ? ' class="t-light"'
-                 : $theme eq 'dark'  ? ' class="t-dark"'
-                 :                     '';
+  my $theme    = Iczelia::Theme::from_cookie($req // {});
 
   my @rows;
   if (length $dir) {
-    push @rows,
-        '<tr><td class="icon"><img src="/cms-icons/folder.png" alt=""></td>'
-      . '<td class="name"><a href="../">Parent Directory</a></td>'
-      . '<td class="mtime">-</td><td class="size">-</td></tr>';
+    push @rows, {
+      icon      => 'folder.png',
+      name_href => '<a href="../">Parent Directory</a>',
+      mtime     => '-',
+      size      => '-',
+    };
   }
   for my $e (@$entries) {
     my ($icon, $href, $disp, $size);
@@ -234,122 +163,37 @@ sub _listing_html {
       $size = '-';
     }
     else {
-      $icon = Iczelia::Subpages::icon_for($e->{name});
+      $icon = Iczelia::Subpages::icon_for_entry($e->{name},
+        content_type => $e->{content_type}, is_binary => $e->{is_binary},
+        lang => $e->{lang});
       $href = escape_url($e->{name});
       $disp = escape_html($e->{name});
       $size = Iczelia::Subpages::fmt_size($e->{size});
     }
-    my $mtime = Iczelia::Subpages::fmt_mtime($e->{updated_at});
-    push @rows,
-        qq{<tr><td class="icon"><img src="/cms-icons/$icon" alt=""></td>}
-      . qq{<td class="name"><a href="$href">$disp</a></td>}
-      . qq{<td class="mtime">$mtime</td><td class="size">$size</td></tr>};
+    push @rows, {
+      icon      => $icon,
+      name_href => qq{<a href="$href">$disp</a>},
+      mtime     => Iczelia::Subpages::fmt_mtime($e->{updated_at}),
+      size      => $size,
+    };
   }
-  my $row_html = join "\n", @rows;
 
-  my $readme_html = '';
-  if ($readme) {
-    my $name = escape_html($readme->{name});
-    my $body = escape_html($readme->{content});
-    $readme_html =
-        qq{<section class="readme"><h2>$name</h2>}
-      . qq{<pre><code>$body</code></pre></section>\n};
-  }
-  my $esc_footer  = escape_html($footer // '');
-  my $toggle_html = _theme_toggle_html($theme);
-  my $dark_auto   = _dark_rules('  html:not(.t-light)');
-  my $dark_forced = _dark_rules('html.t-dark');
-
-  return <<"HTML";
-<!DOCTYPE html>
-<html lang="en"$html_class>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<meta name="color-scheme" content="light dark">
-<title>$esc_ttl</title>
-<style>
-body { font-family: Arial, sans-serif; color: #000; background: #fff;
-       margin: 16px 24px; max-width: 820px; }
-h1 { font-size: 18px; margin: 0 0 12px; font-weight: bold; }
-table { border-collapse: collapse; width: 100%; }
-thead th { text-align: left; padding: 4px 8px;
-           border-bottom: 1px solid #888; background: #eee;
-           font-weight: bold; font-size: 12px; }
-tbody td { padding: 4px 8px; border-bottom: 1px solid #eee;
-           vertical-align: middle; font-size: 13px; }
-tbody tr:hover { background: #f5f5f5; }
-td.icon { width: 36px; }
-td.icon img { height: 28px; vertical-align: middle; border: 0; }
-td.size, td.mtime { text-align: right; white-space: nowrap; color: #555; }
-td.mtime { font-size: 12px; }
-thead th.size, thead th.mtime { text-align: right; }
-a { color: #1a3a7a; text-decoration: none; }
-a:hover { color: #4a6da7; text-decoration: underline; }
-.readme { background: #fafafa; border: 1px solid #ccc;
-          padding: 8px 12px; margin: 0 0 14px; }
-.readme h2 { margin: 0 0 6px; font-size: 13px; font-weight: bold;
-             font-family: monospace; }
-.readme pre { margin: 0; padding: 8px; background: #fff;
-              border: 1px solid #ddd; overflow: auto;
-              max-height: 400px;
-              font: 13px/1.5 monospace; color: #000; }
-hr { border: 0; border-top: 1px solid #ccc; margin: 18px 0 6px; }
-address { font-style: normal; font-size: 11px; color: #777; }
-.theme { float: right; font-size: 11px; color: #777; }
-.theme a { color: #888; margin-left: 6px; }
-.theme a.on { color: #000; font-weight: bold; text-decoration: none; }
-\@media (prefers-color-scheme: dark) {
-$dark_auto}
-$dark_forced</style>
-</head>
-<body>
-<h1>$esc_ttl</h1>
-$readme_html<table>
-<thead><tr><th></th><th>Name</th><th class="mtime">Last modified</th><th class="size">Size</th></tr></thead>
-<tbody>
-$row_html
-</tbody>
-</table>
-<hr>
-$toggle_html<address>$esc_footer</address>
-</body>
-</html>
-HTML
-}
-
-sub _theme_toggle_html {
-  my ($current) = @_;
-  $current ||= 'auto';
-  my @opts = (['auto', 'auto'], ['light', 'light'], ['dark', 'dark']);
-  my @parts;
-  for my $o (@opts) {
-    my ($val, $label) = @$o;
-    my $on = ($val eq $current) ? ' class="on"' : '';
-    push @parts, qq{<a href="?set-theme=$val"$on>$label</a>};
-  }
-  return '<div class="theme">theme:' . join('', @parts) . '</div>';
-}
-
-# Dark palette emitted twice: once inside the prefers-color-scheme query
-# (gated by :not(.t-light) so a forced-light cookie wins over the system),
-# and once at top level keyed on html.t-dark (forced-dark cookie).
-sub _dark_rules {
-  my ($p) = @_;
-  return <<"CSS";
-$p body { background: #000; color: #b9c8d6; }
-$p thead th { background: #0a1620; border-bottom-color: rgba(110,145,180,0.55); }
-$p tbody td { border-bottom-color: rgba(110,145,180,0.18); }
-$p tbody tr:hover { background: rgba(140,180,220,0.08); }
-$p td.size, $p td.mtime { color: #8aa0b8; }
-$p a { color: #6ea4d6; }
-$p a:hover { color: #ffffff; }
-$p .readme { background: #0a0e14; border-color: rgba(110,145,180,0.35); }
-$p .readme pre { background: #000; color: #b9c8d6; border-color: rgba(110,145,180,0.35); }
-$p hr { border-top-color: rgba(110,145,180,0.55); }
-$p address, $p .theme { color: #6ea4d6; }
-$p .theme a { color: #6ea4d6; }
-$p .theme a.on { color: #ffffff; }
-CSS
+  return {
+    status  => 200,
+    headers => {
+      'Content-Type'  => 'text/html; charset=utf-8',
+      'Cache-Control' => 'no-cache',
+      'Vary'          => 'Cookie',
+    },
+    body => Iczelia::PublicListing::render_listing(
+      title  => "Index of $url_path",
+      rows   => \@rows,
+      readme => $readme,
+      footer => Iczelia::PublicListing::footer_for($ctx->db),
+      theme  => $theme,
+    ),
+    _no_cache => 1,
+  };
 }
 
 1;

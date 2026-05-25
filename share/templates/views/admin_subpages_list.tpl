@@ -29,7 +29,7 @@
 {% endif %}
   <section class="cms-subpage-section">
     <h2>new subpage</h2>
-    <form class="cms-form" method="POST" action="/admin/subpages/new" enctype="multipart/form-data">
+    <form class="cms-form" method="POST" action="/admin/subpages/new" enctype="multipart/form-data" data-cms-upload="bundle">
       <input type="hidden" name="csrf" value="{{ csrf_form }}">
       <fieldset class="cms-field cms-field-text">
         <legend>slug</legend>
@@ -43,12 +43,7 @@
       <fieldset class="cms-field cms-field-text">
         <legend>bundle (.zip)</legend>
         <input type="file" name="bundle" accept=".zip,application/zip">
-        <p class="cms-help">a zip of HTML/CSS/JS/images; a single wrapping folder is unwrapped automatically.</p>
-      </fieldset>
-      <fieldset class="cms-field cms-field-text">
-        <legend>or import from a server path</legend>
-        <input type="text" name="zip_path" value="{{ zip_path_value }}" maxlength="1024" placeholder="/var/lib/iczelia/bundles/site.zip">
-        <p class="cms-help">absolute path to a .zip already on the server, read with the daemon's permissions. no size limit; use this for bundles too large to upload.</p>
+        <p class="cms-help">a zip of HTML/CSS/JS/images; a single wrapping folder is unwrapped automatically. files over ~6 MB go through the chunked uploader (no size limit, progress shown below).</p>
       </fieldset>
       <p class="cms-actions">
         <button type="submit" class="cms-btn cms-btn-primary">create subpage</button>

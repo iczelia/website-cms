@@ -969,10 +969,8 @@ $LANG{diff} = {
       re   => qr{(?:^|(?<=\n))(?:diff |index |--- |\+\+\+ ) [^\n]* }x
     },
     {type => 'kw',  re => qr{(?:^|(?<=\n))@@ [^\n]* @@ [^\n]* }x},
-    {type => 'cst', re => qr{(?:^|(?<=\n))\+ [^\n]* }x},           # added line
-    {type => 'com', re => qr{(?:^|(?<=\n))-  [^\n]* }x}
-    ,    # removed (note 1 space)
-    {type => 'com', re => qr{(?:^|(?<=\n))-[^\n]*}x},    # removed line
+    {type => 'add', re => qr{(?:^|(?<=\n))\+(?!\+\+)[^\n]*}x},
+    {type => 'del', re => qr{(?:^|(?<=\n))-(?!--)[^\n]*}x},
     {type => 'id',  re => qr{[^\n]+}x},                  # context
   ],
 };
@@ -1343,10 +1341,261 @@ for my $name (keys %LANG) {
 sub known {
   my ($lang) = @_;
   return 0 unless defined $lang && length $lang;
+  return 1 if defined _canon_lang($lang);
+  return 0;
+}
+
+sub _canon_lang {
+  my ($lang) = @_;
+  return undef unless defined $lang && length $lang;
   my $k = lc $lang;
-  return 1 if exists $ALIAS{$k};
+  $k =~ s/\A\s+|\s+\z//g;
+  $k =~ s/-mode\z//;
+  $k =~ tr/_/ /;
+  $k =~ s/\s+/-/g;
+  return $ALIAS{$k} if exists $ALIAS{$k};
   _refresh_db_langs();
-  return exists $DB_ALIAS{$k} ? 1 : 0;
+  return $DB_ALIAS{$k} if exists $DB_ALIAS{$k};
+  return undef;
+}
+
+# Linguist-style language hinting for the languages the local
+# highlighter actually knows. The order in lang_for_file mirrors
+# github-linguist's public strategy: editor modeline, known filename,
+# shebang, extension, XML header / section-ish names, then cheap
+# content heuristics. This deliberately does not try to implement
+# Linguist's full Bayesian classifier.
+my %_BASENAME_LANG = (
+  'makefile'      => 'make',
+  'gnumakefile'   => 'make',
+  'bsdmakefile'   => 'make',
+  'dockerfile'    => 'dockerfile',
+  'containerfile' => 'dockerfile',
+  '.bashrc'       => 'bash',
+  '.bash_profile' => 'bash',
+  '.bash_login'   => 'bash',
+  '.profile'      => 'bash',
+  '.zshrc'        => 'bash',
+  '.kshrc'        => 'bash',
+  'bashrc'        => 'bash',
+  'zshrc'         => 'bash',
+  'rakefile'      => 'ruby',
+  'gemfile'       => 'ruby',
+  'guardfile'     => 'ruby',
+  'podfile'       => 'ruby',
+  'buildfile'     => 'ruby',
+  'go.mod'        => 'go',
+  'go.sum'        => 'go',
+  'cpanfile'      => 'perl',
+  'carton'        => 'perl',
+);
+my %_EXT_LANG = (
+  c     => 'c',         h    => 'c',
+  cc    => 'cpp',       cpp  => 'cpp',  cxx  => 'cpp',
+  hpp   => 'cpp',       hxx  => 'cpp',  hh   => 'cpp', 'h++' => 'cpp',
+  'c++' => 'cpp',
+  java  => 'java',
+  rs    => 'rust',
+  go    => 'go',
+  py    => 'python',    pyw  => 'python', pyi => 'python',
+  py3   => 'python',    gyp  => 'python', gypi => 'python',
+  js    => 'javascript', mjs => 'javascript', cjs => 'javascript',
+  jsx   => 'javascript', ts  => 'javascript', tsx => 'javascript',
+  es6   => 'javascript', pac => 'javascript',
+  sh    => 'bash',      bash => 'bash', zsh => 'bash',
+  ksh   => 'bash',      fish => 'bash', csh => 'bash',
+  pl    => 'perl',      pm   => 'perl', t   => 'perl',
+  pod   => 'perl',      psgi => 'perl',
+  html  => 'html',      htm  => 'html',  xhtml=> 'html',
+  shtml => 'html',      xml  => 'html',  svg  => 'html',
+  json  => 'json',
+  jsonc => 'json',
+  yaml  => 'yaml',      yml  => 'yaml',
+  toml  => 'toml',
+  lock  => 'toml',
+  md    => 'markdown',  markdown => 'markdown',
+  mkd   => 'markdown',  mdwn => 'markdown', mdown => 'markdown',
+  sql   => 'sql',
+  diff  => 'diff',      patch => 'diff',
+  rej   => 'diff',
+  rb    => 'ruby',
+  hs    => 'haskell',   lhs => 'haskell',
+  lua   => 'lua',
+  nix   => 'nix',
+  css   => 'css',       scss => 'css', sass => 'css', less => 'css',
+  scm   => 'lisp',      ss   => 'lisp',  rkt  => 'lisp',  el => 'lisp',
+  cl    => 'lisp',      lisp => 'lisp', lsp => 'lisp',
+  apl   => 'apl',       dyalog => 'apl',
+  asm   => 'x86-intel', nasm => 'x86-intel', inc => 'fasm',
+  fasm  => 'fasm',      s    => 'x86-att',
+  S     => 'x86-att',
+);
+
+sub lang_for_filename {
+  my ($name) = @_;
+  return undef unless defined $name && length $name;
+  my $base = $name;
+  $base =~ s{^.*/}{};
+  my $lc = lc $base;
+  return $_BASENAME_LANG{$lc} if exists $_BASENAME_LANG{$lc};
+  return 'dockerfile' if $lc =~ /\.dockerfile\z/;
+  if ($base =~ /\.([A-Za-z0-9+]+)\z/) {
+    my $ext = $1;
+    my $hit = $_EXT_LANG{$ext} // $_EXT_LANG{lc $ext};
+    return $hit if defined $hit;
+  }
+  # README and friends: render as markdown when there's an .md sibling,
+  # else plain (Subpages::is_readme_name covers the accept rule).
+  return 'markdown' if $lc =~ /\A readme \. (?: md | markdown ) \z/x;
+  return undef;
+}
+
+sub lang_for_file {
+  my ($name, $bytes) = @_;
+  if (defined $bytes && length $bytes) {
+    my $ml = _lang_from_modeline($bytes);
+    return $ml if defined $ml;
+  }
+
+  my $by_base = _lang_for_basename($name);
+  return $by_base if defined $by_base;
+
+  if (defined $bytes && length $bytes) {
+    my $sb = _lang_from_shebang($bytes);
+    return $sb if defined $sb;
+  }
+
+  my $by_name = lang_for_filename($name);
+  return $by_name if defined $by_name;
+  return undef unless defined $bytes && length $bytes;
+
+  my $sample = substr($bytes, 0, 8192);
+  $sample =~ s/\A(?:\xEF\xBB\xBF)?\s+//s;
+  return 'html' if $sample =~ /\A(?:<!doctype\s+html\b|<html\b)/i;
+  return 'html' if $sample =~ /\A<\?xml\b/i;
+  return 'json' if $sample =~ /\A[\{\[]/ && $sample =~ /[\}\]]\s*\z/s;
+  return 'yaml' if $sample =~ /\A---(?:\s|$)/;
+  return 'diff'
+    if $sample =~ /\A(?:diff --git|Index: |\+\+\+ |--- |\@\@ )/m;
+  return 'markdown'
+    if $sample =~ /\A(?:#{1,6}\s|\s*[-*]\s+\S|\s*\[[ xX]\]\s+\S)/m;
+  return 'sql'
+    if $sample =~ /\b(?:SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i
+    && $sample =~ /;\s*(?:--[^\n]*)?\z/s;
+  return 'css'
+    if $sample =~ /[A-Za-z_-][\w-]*\s*:\s*[^;{}]+;/
+    && $sample =~ /[{}]/;
+  return 'make'
+    if $sample =~ /^[A-Za-z0-9_.\/%+-][^:=\n]*:\s*(?:[^=\n]|$)/m
+    && $sample =~ /^\t/m;
+  return undef;
+}
+
+sub _lang_for_basename {
+  my ($name) = @_;
+  return undef unless defined $name && length $name;
+  my $base = $name;
+  $base =~ s{^.*/}{};
+  my $lc = lc $base;
+  return $_BASENAME_LANG{$lc} if exists $_BASENAME_LANG{$lc};
+  return 'dockerfile' if $lc =~ /\.dockerfile\z/;
+  return undef;
+}
+
+sub _edge_lines {
+  my ($bytes) = @_;
+  my @lines = split /\r?\n/, substr($bytes, 0, 16384);
+  my @picked;
+  my $n = @lines < 5 ? scalar(@lines) : 5;
+  push @picked, @lines[0 .. $n - 1] if $n;
+  if (@lines > 5) {
+    my $start = @lines - 5;
+    push @picked, @lines[$start .. $#lines];
+  }
+  return join "\n", @picked;
+}
+
+sub _lang_from_modeline {
+  my ($bytes) = @_;
+  my $text = _edge_lines($bytes);
+  return undef if $text =~ /UseVimball/;
+
+  while ($text =~ /-\*-(.*?)-\*-/g) {
+    my $body = $1;
+    my $mode;
+    if ($body =~ /(?:^|[;\s])mode\s*:\s*([^:;\s]+)/i) {
+      $mode = $1;
+    }
+    elsif ($body =~ /^\s*([^:;\s]+)/) {
+      $mode = $1;
+    }
+    my $lang = _canon_lang($mode);
+    return $lang if defined $lang;
+  }
+
+  if ($text =~ /(?:^|[ \t])(?:vi|vim|Vim|ex)(?:[<=>]?\d+)?\s*:.*?(?:filetype|ft|syntax)\s*=\s*([A-Za-z0-9_+-]+)/m) {
+    my $lang = _canon_lang($1);
+    return $lang if defined $lang;
+  }
+  return undef;
+}
+
+sub _lang_from_shebang {
+  my ($bytes) = @_;
+  my ($line) = $bytes =~ /\A#!\s*([^\r\n]+)/;
+  return undef unless defined $line && length $line;
+  $line =~ s/\s+\z//;
+  my @words = split /\s+/, $line;
+  return undef unless @words;
+  my $cmd = shift @words;
+  $cmd =~ s{\A.*/}{};
+  $cmd = lc $cmd;
+
+  if ($cmd eq 'env') {
+    my @expanded;
+    while (@words) {
+      my $w = shift @words;
+      if ($w eq '-S') {
+        @expanded = @words;
+        last;
+      }
+      next if $w =~ /^-/;
+      @expanded = ($w, @words);
+      last;
+    }
+    @words = @expanded;
+    return undef unless @words;
+    $cmd = lc shift @words;
+    $cmd =~ s{\A.*/}{};
+  }
+
+  if ($cmd eq 'nix-shell') {
+    for (my $i = 0; $i < @words; $i++) {
+      next unless $words[$i] eq '-i' && defined $words[$i + 1];
+      my $lang = _lang_from_command($words[$i + 1]);
+      return $lang if defined $lang;
+    }
+    return 'nix';
+  }
+
+  return _lang_from_command($cmd);
+}
+
+sub _lang_from_command {
+  my ($cmd) = @_;
+  return undef unless defined $cmd && length $cmd;
+  $cmd = lc $cmd;
+  $cmd =~ s{\A.*/}{};
+  return 'python'     if $cmd =~ /\Apython(?:\d+(?:\.\d+)?)?\z/;
+  return 'perl'       if $cmd =~ /\Aperl\d*\z/;
+  return 'ruby'       if $cmd =~ /\Aruby\d*(?:\.\d+)?\z/;
+  return 'javascript' if $cmd =~ /\A(?:node|nodejs|deno|bun|js)\z/;
+  return 'bash'       if $cmd =~ /\A(?:ba|z|k|fi|da|c)?sh\z/;
+  return 'bash'       if $cmd =~ /\A(?:fish|shell)\z/;
+  return 'lua'        if $cmd =~ /\Alua(?:\d+(?:\.\d+)?)?\z/;
+  return 'haskell'    if $cmd =~ /\A(?:runhaskell|runghc)\z/;
+  return 'lisp'       if $cmd =~ /\A(?:racket|guile|scheme|sbcl|clisp)\z/;
+  return _canon_lang($cmd);
 }
 
 sub languages {

@@ -303,6 +303,10 @@ sub _handle_one {
   _compress_uncached($req, $resp);
 
   my $keep_alive = _decide_keep_alive($req, \%opt);
+  # Streamed responses always close (chunked without Content-Length
+  # plus our forced Connection: close header); skip the keep-alive
+  # parking step so the worker can immediately recycle.
+  $keep_alive = 0 if ref($resp->{stream}) eq 'CODE';
   _apply_keep_alive($resp, $keep_alive, \%opt);
 
   Iczelia::HTTP::write_response($cli, $resp);

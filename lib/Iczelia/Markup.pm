@@ -30,6 +30,7 @@ use constant MAX_NEST => 8;    # blockquote / list nesting cap
 # Per-render state, dynamic-scoped via local() at the top of render():
 # refs, fnotes, fn_seq, fn_idx.
 our $STATE;
+our $ALLOW_REMOTE_IMAGES = 0;
 
 # render($src) -> ($html, \@math) where @math is [display, latex] pairs
 # in placeholder order.
@@ -662,7 +663,8 @@ sub _ok_image {
   my $u = shift;
   return 1 if $u =~ m{^/media/};
   return 1 if $u =~ m{^/[^/]};
-  return 1 if $u =~ m{^[^:]+\.(?:png|jpe?g|gif|svg|webp)$}i;
+  return 1 if $ALLOW_REMOTE_IMAGES && $u =~ m{^https?://}i;
+  return 1 if $u =~ m{^[^:?#]+\.(?:png|jpe?g|gif|svg|webp)(?:[?#].*)?$}i;
   return 0;
 }
 

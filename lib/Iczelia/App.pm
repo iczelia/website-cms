@@ -41,6 +41,7 @@ use Iczelia::Handlers::Static;
 use Iczelia::Handlers::Honeypot;
 use Iczelia::Handlers::Dynamic;
 use Iczelia::Handlers::Subpages;
+use Iczelia::Handlers::Git;
 use Iczelia::Handlers::Analytics;
 use Iczelia::Handlers::Backup;
 use File::Path qw(make_path);
@@ -104,6 +105,7 @@ sub build {
   Iczelia::Handlers::OG->register($router, $ctx);
   Iczelia::Handlers::Guestbook->register($router, $ctx);
   Iczelia::Handlers::Public->register($router, $ctx);
+  Iczelia::Handlers::Git->register($router, $ctx);
   Iczelia::Handlers::Admin->register($router, $ctx);
   Iczelia::Handlers::Analytics->register($router, $ctx);
   Iczelia::Handlers::Backup->register($router, $ctx);

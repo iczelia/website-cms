@@ -82,6 +82,12 @@ is(Iczelia::Subpages::content_type_for('a.weird'),
 ok(Iczelia::Subpages::is_text_type('text/html; charset=utf-8'),
   'html is text');
 ok(!Iczelia::Subpages::is_text_type('image/png'), 'png is not text');
+is(Iczelia::Subpages::detect_file_type('script',
+    "#!/usr/bin/env perl\nprint qq(ok\\n);\n")->{lang},
+  'perl', 'detect_file_type carries Linguist-style shebang language');
+is(Iczelia::Subpages::detect_file_type('notes.txt',
+    "# vim: ft=markdown\n# title\n")->{lang},
+  'markdown', 'detect_file_type carries modeline language');
 
 # 4. Zip extraction.
 my $zip = make_zip(
@@ -193,7 +199,7 @@ my $sid = Iczelia::Subpages::create(
       content_type => 'text/html; charset=utf-8', size => 3, is_binary => 0 },
   ]
 );
-my $ctx = FakeCtx->new($db);
+my $ctx = FakeCtx->new($db, cfg => { 'tmp-dir' => "$tmp/uptmp" });
 
 my $r1 = Iczelia::Handlers::Subpages::serve($ctx,
   {method => 'GET', path => '/demo/'});
@@ -307,43 +313,54 @@ is(
   'br-only asset 404s a client that only accepts gzip'
 );
 
-# 9. _bundle_bytes: importing a .zip already on the server's filesystem.
+# 9. _bundle_bytes: classic multipart upload + chunked-upload session.
 {
   my $zipbytes = make_zip('index.html' => '<h1>imported</h1>');
-  my $zippath  = "$tmp/import.zip";
-  open my $zf, '>:raw', $zippath or die "write $zippath: $!";
-  print $zf $zipbytes;
-  close $zf;
 
-  my ($b, $e, $from_fs) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [], params => {zip_path => $zippath}});
-  is($e, undef, 'fs import: no error for a readable zip');
-  is($b, $zipbytes, 'fs import: returns the file bytes verbatim');
-  is($from_fs, 1, 'fs import: flagged as a filesystem import');
-  my ($ef) = Iczelia::Subpages::extract_zip($b);
-  is($ef->[0]{path}, 'index.html', 'fs-imported bytes extract correctly');
+  # Multipart path: bytes come back verbatim, not flagged as unlimited.
+  my ($b, $e, $unlimited) =
+    Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    $ctx, {uploads => [{body => $zipbytes}], params => {}});
+  is($e, undef, 'multipart upload: no error');
+  is($b, $zipbytes, 'multipart upload: returns bytes verbatim');
+  ok(!$unlimited, 'multipart upload: respects the bundle caps');
 
-  my (undef, $e2) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [], params => {zip_path => 'relative/path.zip'}});
-  ok($e2, 'fs import: a relative path is rejected');
-
-  my (undef, $e3) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [], params => {zip_path => "$tmp/does-not-exist.zip"}});
-  ok($e3, 'fs import: a missing file is rejected');
-
-  my (undef, $e4) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [], params => {zip_path => "$tmp"}});
-  ok($e4, 'fs import: a directory is rejected');
-
+  # Nothing attached: (undef, undef, 0).
   my ($b5, $e5) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [], params => {}});
+    $ctx, {uploads => [], params => {}, auth_sid => 'sid-x'});
   ok(!defined $b5 && !defined $e5,
-    'fs import: nothing supplied yields (undef, undef)');
+    'no attachment: yields (undef, undef)');
 
-  my ($b6, undef, $up_fs) = Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
-    {uploads => [{body => 'UPLOADED'}], params => {zip_path => $zippath}});
-  is($b6, 'UPLOADED', 'fs import: an uploaded file wins over the path');
-  ok(!$up_fs, 'fs import: an upload is not flagged as a filesystem import');
+  # Chunked-upload path: claim an Iczelia::Upload session by id.
+  require Iczelia::Upload;
+  my $up = Iczelia::Upload->new(
+    db => $db, tmp_dir => "$tmp/uptmp",
+  );
+  my $sid = 'sid-roundtrip';
+  my $id  = $up->init($sid, filename => 'bundle.zip');
+  my ($nsize, $aerr) = $up->append($id, $sid, 0, $zipbytes);
+  is($aerr, undef, 'upload session: append OK');
+  is($nsize, length($zipbytes), 'upload session: size matches');
+
+  my ($zb, $zerr, $zunlim) =
+    Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    $ctx, {uploads => [], params => {upload_id => $id}, auth_sid => $sid});
+  is($zerr, undef, 'chunked upload: no error');
+  is($zb, $zipbytes, 'chunked upload: round-trips bytes');
+  ok($zunlim,
+    'chunked upload: flagged unlimited (caps owned by Upload module)');
+  is($up->size_of($id, $sid), undef,
+    'chunked upload: session cleaned up after _bundle_bytes claims it');
+
+  # Wrong sid: refused even with the correct id.
+  my $id2 = $up->init($sid, filename => 'b2.zip');
+  $up->append($id2, $sid, 0, 'XYZ');
+  my (undef, $sid_err) =
+    Iczelia::Handlers::Admin::Subpages::_bundle_bytes(
+    $ctx, {uploads => [], params => {upload_id => $id2},
+           auth_sid => 'wrong-sid'});
+  like($sid_err, qr/upload:/, 'chunked upload: rejects wrong sid');
+  $up->cleanup($id2, $sid);
 }
 
 # 10. extract_zip: a filesystem import bypasses the bundle caps.
@@ -370,6 +387,15 @@ is(Iczelia::Subpages::icon_for('Makefile'), 'makefile.png',
   'icon: Makefile by name');
 is(Iczelia::Subpages::icon_for('weird.xyz'), 'file.png',
   'icon: unknown extension -> generic file');
+is(Iczelia::Subpages::detect_file_type('script',
+    "#!/usr/bin/env python3\nprint(1)\n")->{icon},
+  'python.png', 'icon: shebang language drives icon');
+is(Iczelia::Subpages::detect_file_type('vector.svg',
+    "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>\n")->{icon},
+  'image.png', 'icon: image content type wins over XML/HTML language');
+is(Iczelia::Subpages::detect_file_type('tool.pl',
+    "\x7fELF\x02\x01\x01\0binary")->{icon},
+  'exec.png', 'icon: binary magic wins over extension language');
 
 {
   my $sp_id = Iczelia::Subpages::create(
@@ -648,5 +674,9 @@ is(Iczelia::Subpages::icon_for('weird.xyz'), 'file.png',
 done_testing;
 
 package FakeCtx;
-sub new {bless {db => $_[1]}, $_[0]}
+sub new {
+  my ($class, $db, %extra) = @_;
+  bless { db => $db, cfg => $extra{cfg} || {} }, $class;
+}
 sub db  {$_[0]{db}}
+sub cfg {$_[0]{cfg}}

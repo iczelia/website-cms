@@ -25,6 +25,7 @@
     <a href="/admin/guestbook/">guestbook{% if pending_count %} ({{ pending_count }}){% endif %}</a>
     <a href="/admin/media/">media</a>
     <a href="/admin/subpages/">subpages</a>
+    <a href="/admin/git/">git</a>
     <a href="/admin/pgp/">pgp</a>
     <a href="/admin/settings/">settings</a>
     <form class="cms-logout" method="POST" action="/admin/logout">
@@ -46,6 +47,7 @@
 <script src="/vendor/codemirror/active-line.min.js"></script>
 <script src="/vendor/marked.min.js"></script>
 <script src="/cms.js"></script>
+<script src="/cms-upload.js"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

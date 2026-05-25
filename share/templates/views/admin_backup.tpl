@@ -18,9 +18,10 @@
   <section class="cms-anal-block">
     <h2>import</h2>
     <p>upload a previously-exported tar archive. <strong>this overwrites the live DB and media directory</strong>; the previous DB is kept as <code>site.db.preimport</code>.</p>
-    <form class="cms-form" method="POST" action="/admin/backup/import" enctype="multipart/form-data">
+    <form class="cms-form" method="POST" action="/admin/backup/import" enctype="multipart/form-data" data-cms-upload="archive">
       <input type="hidden" name="csrf" value="{{ csrf.import }}">
       <p><input type="file" name="archive" accept=".tar" required></p>
+      <p class="cms-help">files over ~6 MB go through the chunked uploader (no size limit, progress shown below).</p>
       <p><button type="submit" class="cms-btn cms-btn-danger" onclick="return confirm('overwrite the live DB and media?')">import &amp; replace</button></p>
     </form>
   </section>

@@ -55,16 +55,19 @@ my $TEX_FORBIDDEN = qr/
 /x;
 
 sub render {
-  my ($src, $depth) = @_;
+  my ($src, $depth, %opt) = @_;
   $depth ||= 0;
   return ('', []) unless defined $src && length $src;
   return (Iczelia::Util::escape_html($src), []) if $depth > MAX_NEST;
 
   $src = Iczelia::Util::to_utf8($src) if $depth == 0;
 
-  # Hard cap (caller should already enforce this; double-check).
-  if (length($src) > 8192) {
-    $src = substr($src, 0, 8192);
+  # Hard cap (caller should already enforce this; double-check). Callers
+  # rendering longer trusted-ish input (e.g. git READMEs) can opt into a
+  # higher ceiling via max => N; everyone else stays at 8 KB.
+  my $max = $opt{max} // 8192;
+  if (length($src) > $max) {
+    $src = substr($src, 0, $max);
   }
 
   my @math;
