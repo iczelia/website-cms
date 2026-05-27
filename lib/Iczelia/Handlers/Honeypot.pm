@@ -21,7 +21,7 @@ use Iczelia::HTTP ();
 
 # Serves share/bomb.gz, a gzip decompression bomb, on the paths
 # robots.txt disallows (see Iczelia::Handlers::Feeds::_robots).
-our @PATHS = ('/wp-admin', '/.env');
+our @PATHS = ('/wp-admin', '/wp-admin/', '/.env');
 
 my $BOMB;
 
@@ -36,8 +36,10 @@ sub _serve {
   return {
     status  => 200,
     headers => {
-      'Content-Type'     => 'text/html; charset=utf-8',
-      'Content-Encoding' => 'gzip',
+      'Content-Type'           => 'text/html; charset=utf-8',
+      'Content-Encoding'       => 'gzip',
+      'Cache-Control'          => 'no-store',
+      'X-Content-Type-Options' => 'nosniff',
     },
     body      => $BOMB,
     _no_cache => 1,

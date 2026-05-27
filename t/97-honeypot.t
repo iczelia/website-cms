@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# The /wp-admin and /.env honeypot routes serve share/bomb.gz (gzip).
+# The /wp-admin, /wp-admin/, and /.env honeypot routes serve
+# share/bomb.gz (gzip).
 
 use strict;
 use warnings;
@@ -27,8 +28,8 @@ use Iczelia::Router;
 use Iczelia::Handlers::Honeypot;
 use Iczelia::Handlers::Feeds;
 
-is_deeply([@Iczelia::Handlers::Honeypot::PATHS], ['/wp-admin', '/.env'],
-  'honeypot paths');
+is_deeply([@Iczelia::Handlers::Honeypot::PATHS],
+  ['/wp-admin', '/wp-admin/', '/.env'], 'honeypot paths');
 
 my $router = Iczelia::Router->new;
 require Iczelia::Context;
@@ -43,6 +44,10 @@ for my $path (@Iczelia::Handlers::Honeypot::PATHS) {
   is($resp->{status}, 200, "$path: 200");
   is($resp->{headers}{'Content-Encoding'},
     'gzip', "$path: Content-Encoding gzip");
+  is($resp->{headers}{'Cache-Control'}, 'no-store',
+    "$path: Cache-Control no-store");
+  is($resp->{headers}{'X-Content-Type-Options'}, 'nosniff',
+    "$path: X-Content-Type-Options nosniff");
   ok($resp->{_no_cache}, "$path: _no_cache (out of the daemon cache)");
   is(substr($resp->{body}, 0, 3),
     "\x1f\x8b\x08", "$path: body is a gzip stream");
@@ -75,6 +80,7 @@ SKIP: {
     'text/plain; charset=utf-8', 'robots.txt content type');
   like($robots->{body}, qr{^Disallow: /admin/$}m,    'robots disallows /admin/');
   like($robots->{body}, qr{^Disallow: /wp-admin$}m,  'robots disallows /wp-admin');
+  like($robots->{body}, qr{^Disallow: /wp-admin/$}m, 'robots disallows /wp-admin/');
   like($robots->{body}, qr{^Disallow: /\.env$}m,     'robots disallows /.env');
   like($robots->{body}, qr{^Sitemap: \S+/sitemap\.xml$}m, 'robots has Sitemap');
 }

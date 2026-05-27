@@ -64,6 +64,8 @@ is(Iczelia::Highlight::lang_for_filename('Dockerfile'), 'dockerfile',
   'Dockerfile name');
 is(Iczelia::Highlight::lang_for_filename('README.md'), 'markdown',
   'README.md -> markdown');
+is(Iczelia::Highlight::lang_for_filename('Proof.lean'), 'lean4',
+  'Lean extension -> lean4');
 is(Iczelia::Highlight::lang_for_filename('weird.xyzzy'), undef,
   'unknown extension -> undef (caller falls back to plain)');
 is(Iczelia::Highlight::lang_for_filename(''), undef, 'empty name -> undef');

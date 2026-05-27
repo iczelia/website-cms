@@ -31,6 +31,8 @@ ok Iczelia::Highlight::known('x86-intel'),   'x86-intel known';
 ok Iczelia::Highlight::known('x86-att'),     'x86-att known';
 ok Iczelia::Highlight::known('fasm'),        'fasm known';
 ok Iczelia::Highlight::known('apl'),         'apl known';
+ok Iczelia::Highlight::known('lean4'),       'lean4 known';
+ok Iczelia::Highlight::known('lean'),        'lean alias known';
 ok Iczelia::Highlight::known('plain'),       'plain known';
 ok !Iczelia::Highlight::known('moonscript'), 'unknown returns false';
 ok !Iczelia::Highlight::known(''),           'empty rejected';
@@ -81,6 +83,20 @@ like $h, qr{<span class="hl-gly">/</span>},  'apl: / as glyph';
 like $h, qr{<span class="hl-kw">⍵</span>},   'apl: ⍵ -> kw';
 like $h, qr{<span class="hl-gly">÷</span>},  'apl: ÷ as glyph';
 like $h, qr{<span class="hl-gly">≢</span>},  'apl: ≢ as glyph';
+
+$h = Iczelia::Highlight::highlight(
+  q{@[simp] theorem one_add (n : Nat) : 1 + n = Nat.succ n := by
+  -- proof
+  simp},
+  'lean4'
+);
+like $h, qr{<pre class="hl lang-lean4"><code>}, 'Lean4 wrapper class';
+like $h, qr{<span class="hl-attr">\@\[simp\]</span>}, 'Lean4: attribute';
+like $h, qr{<span class="hl-kw">theorem</span>},       'Lean4: theorem -> kw';
+like $h, qr{<span class="hl-typ">Nat</span>},           'Lean4: Nat -> typ';
+like $h, qr{<span class="hl-kw">by</span>},             'Lean4: by -> kw';
+like $h, qr{<span class="hl-com">-- proof</span>},      'Lean4: line comment';
+like $h, qr{<span class="hl-cst">simp</span>},          'Lean4: tactic';
 
 # HTML safety: angle-brackets in input must always be escaped
 $h = Iczelia::Highlight::highlight('a < b && c > d', 'c');

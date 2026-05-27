@@ -1211,6 +1211,53 @@ $LANG{haskell} = {
   ],
 };
 
+$LANG{lean4} = {
+  name    => 'Lean4',
+  aliases => [qw(lean lean4)],
+  rules   => [
+    # Lean block comments can nest; this highlighter keeps the common
+    # single-level case cheap and deterministic.
+    {type => 'com', re => qr{ /- .*? -/ }sx},
+    {type => 'com', re => qr{ -- [^\n]* }x},
+
+    # String literals, including interpolated string prefixes such as s!"...".
+    {type => 'str', re => qr{ [A-Za-z_]* !? " (?:[^"\\]|\\.)* " }sx},
+    {type => 'chr', re => qr{ ' (?:[^'\\]|\\.) ' }sx},
+    {type => 'attr', re => qr{ \@ \[ (?:[^\[\]\n]|\[[^\]]*\])* \] }x},
+    {type => 'num',  re => qr{ \b (?:0[xX][0-9A-Fa-f_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][-+]?\d[\d_]*)?) \b }x},
+    {
+      type => 'kw',
+      re   => qr{\b(?:
+            abbrev|axiom|by|calc|class|constant|def|deriving|do|elab|else|end|
+            example|export|extends|for|forall|from|fun|have|if|import|in|
+            inductive|infix|infixl|infixr|instance|let|macro|match|mutual|
+            namespace|notation|open|opaque|prefix|private|protected|public|
+            rec|section|set_option|show|structure|syntax|theorem|then|universe|
+            universes|variable|variables|where|with
+        )\b}x
+    },
+    {
+      type => 'typ',
+      re   => qr{\b(?:
+            Prop|Type|Sort|Nat|Int|UInt8|UInt16|UInt32|UInt64|USize|Float|
+            Char|String|Bool|List|Array|Vector|Option|Except|Result|IO|Unit|
+            Empty|PUnit|Subtype|Sigma|Prod|And|Or|Not|Eq|Iff|True|False
+        )\b}x
+    },
+    {
+      type => 'cst',
+      re   => qr{\b(?:
+            true|false|none|some|ok|error|sorry|admit|rfl|by_cases|by_contra|
+            exact|apply|intro|intros|rw|rewrite|simp|simpa|constructor|cases|
+            induction|assumption|trivial|decide|omega|ring|aesop|linarith
+        )\b}x
+    },
+    {type => 'op', re => qr{(?::=|=>|←|→|↔|⇒|∀|∃|∧|∨|¬|≤|≥|≠|::|\.|[-+*/%=<>!&|^~?:]+) }x},
+    {type => 'pn', re => qr{[\(\)\{\}\[\];,·]}},
+    {type => 'id', re => qr{[A-Za-z_\p{L}][\w\p{L}'!?₀-₉]*}},
+  ],
+};
+
 $LANG{lua} = {
   name    => 'Lua',
   aliases => [qw(lua)],
@@ -1420,6 +1467,7 @@ my %_EXT_LANG = (
   rej   => 'diff',
   rb    => 'ruby',
   hs    => 'haskell',   lhs => 'haskell',
+  lean  => 'lean4',
   lua   => 'lua',
   nix   => 'nix',
   css   => 'css',       scss => 'css', sass => 'css', less => 'css',
