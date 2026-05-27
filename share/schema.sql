@@ -371,3 +371,12 @@ CREATE TABLE IF NOT EXISTS response_cache (
   etag         TEXT NOT NULL,
   created_at   INTEGER NOT NULL
 );
+
+-- AI-slop bot trap. One row per (URL, UA-bucket) the trap has been
+-- asked about; the body is the pre-rendered HTML page that subsequent
+-- hits for that path can serve straight from the DB.
+CREATE TABLE IF NOT EXISTS slop_pages (
+  path        TEXT PRIMARY KEY,
+  body        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);

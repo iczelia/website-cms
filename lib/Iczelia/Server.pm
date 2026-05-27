@@ -71,9 +71,12 @@ sub cache {
 #   analytics_db      enables per-request analytics logging
 #   not_found_handler turns 404 plain-text responses into themed HTML
 #   warmer_callback   runs once in a niced child fork; respawns on return
+#   pre_dispatch      called before the router; returning a response
+#                     short-circuits the rest of dispatch (used by the
+#                     AI-slop bot trap)
 for my $attr (
   qw(router dynamic_lookup analytics_db
-  not_found_handler warmer_callback)
+  not_found_handler warmer_callback pre_dispatch)
   )
 {
   no strict 'refs';
@@ -393,6 +396,13 @@ sub _serve_from_cache {
 sub _dispatch {
   my ($self, $req) = @_;
   my $resp;
+  if ($self->{pre_dispatch}) {
+    my $pre = eval {$self->{pre_dispatch}->($req)};
+    if (!$@ && ref($pre) eq 'HASH') {
+      return $pre;
+    }
+    warn "pre_dispatch error: $@" if $@;
+  }
   eval {
     if ($self->{on_request}) {
       $resp = $self->{on_request}->($req);

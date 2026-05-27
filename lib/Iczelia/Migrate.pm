@@ -121,6 +121,22 @@ my @MIGRATIONS = (
     },
   },
 
+  # 0.1.5 -> 0.1.6: AI slop bot trap cache.
+  {
+    version => '0.1.5 -> 0.1.6',
+    name    => 'slop_pages table',
+    check   => sub {_table_exists($_[0], 'slop_pages')},
+    apply   => sub {
+      $_[0]->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS slop_pages (
+            path       TEXT PRIMARY KEY,
+            body       TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )}
+      );
+    },
+  },
+
   # 0.1.5 -> 0.1.6: cgit-style git repos.
   {
     version => '0.1.5 -> 0.1.6',

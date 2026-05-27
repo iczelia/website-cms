@@ -36,3 +36,4 @@ inc/
 attic/
 var/
 share/chrome/
+share/tinyllm/

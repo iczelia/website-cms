@@ -20,3 +20,4 @@ requires 'DBI';
 requires 'DBD::SQLite', '1.70';   # bundled SQLite, needs FTS5
 requires 'IO::Compress::Brotli';
 requires 'Gzip::Zopfli';
+requires 'Inline::C';             # AI-slop bot trap inference engine

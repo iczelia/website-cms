@@ -90,5 +90,6 @@ $srv->router($app->{router});
 $srv->dynamic_lookup($app->{dynamic_lookup}) if $app->{dynamic_lookup};
 $srv->not_found_handler($app->{not_found})   if $app->{not_found};
 $srv->warmer_callback($app->{warmer})        if $app->{warmer};
+$srv->pre_dispatch($app->{pre_dispatch})     if $app->{pre_dispatch};
 $srv->analytics_db($app->{ctx}{db});
 $srv->run;

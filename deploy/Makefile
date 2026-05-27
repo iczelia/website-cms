@@ -25,25 +25,45 @@ USER       ?= iczelia
 
 REPO := $(shell cd .. && pwd)
 
-.PHONY: install deps user dirs files conf nginx systemd cron db perms \
-        podman-build podman-run podman-quadlet podman-stop
+.PHONY: install deps user dirs files conf nginx systemd cron db perms tinyllm \
+        inline podman-build podman-run podman-quadlet podman-stop
 
 deps:
 	sudo cpanm --installdeps $(REPO)
 
-install: deps user dirs files conf nginx systemd cron db perms
+# Fetch + convert arnir0/Tiny-LLM into share/tinyllm/ so the AI-slop bot
+# trap has weights to run against. Idempotent; safe to re-run.
+tinyllm:
+	perl $(REPO)/bin/iczelia-tinyllm-convert
+
+# Pre-compile the Inline::C inference engine as the daemon user, so the
+# systemd sandbox (MemoryDenyWriteExecute=true) never has to invoke gcc
+# at request time. Idempotent: once the .so is cached, this is a no-op.
+inline:
+	sudo -u $(USER) PERL5LIB=$(PREFIX)/lib \
+	    perl -MIczelia::Slop::Model -e1 || \
+	    echo "WARN: inline pre-compile failed (the slop trap will fail at runtime)"
+
+install: deps user dirs files conf nginx systemd cron db perms inline
 	@echo
 	@echo "==> Done. Next steps:"
 	@echo "    1) sudo systemctl daemon-reload && sudo systemctl enable --now iczelia"
 	@echo "    2) sudo systemd-tmpfiles --create"
 	@echo "    3) sudo nginx -t && sudo systemctl reload nginx"
 	@echo "    4) sudo -u $(USER) $(PREFIX)/bin/iczelia-passwd"
+	@if [ ! -s $(PREFIX)/share/tinyllm/weights.bin ]; then \
+	  echo "    5) (optional) make tinyllm && sudo make files  # enable AI-slop bot trap"; \
+	fi
 
 user:
 	@id -u $(USER) >/dev/null 2>&1 || sudo useradd --system --shell /usr/sbin/nologin --home-dir $(VARDIR) $(USER)
 
 dirs:
 	sudo install -d -o $(USER) -g $(USER) -m 0755 $(PREFIX) $(PREFIX)/bin $(PREFIX)/lib $(PREFIX)/share
+	# _Inline is the Inline::C compilation cache for the AI-slop bot
+	# trap; the daemon user needs to be able to write here on first
+	# compile (subsequent loads are read-only).
+	sudo install -d -o $(USER) -g $(USER) -m 0755 $(PREFIX)/_Inline
 	sudo install -d -o $(USER) -g $(USER) -m 0755 $(VARDIR) $(VARDIR)/media $(VARDIR)/tmp $(VARDIR)/git
 	sudo install -d -o root -g root -m 0755 $(CONFDIR)
 

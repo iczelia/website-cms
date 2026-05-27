@@ -1,0 +1,273 @@
+#!/usr/bin/perl
+# iczelia.net - personal CMS and static site engine.
+# Copyright (C) 2026 Kamila Szewczyk
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use strict;
+use warnings;
+use Getopt::Long  qw(:config bundling no_auto_abbrev no_ignore_case);
+use File::Path    qw(make_path);
+use File::Basename qw(dirname);
+use FindBin       ();
+use JSON::PP      ();
+
+my $HF = 'https://huggingface.co/arnir0/Tiny-LLM/resolve/main';
+
+# DO NOT REORDER.
+my @TENSORS = (
+  'model.embed_tokens.weight',
+  'model.layers.0.input_layernorm.weight',
+  'model.layers.0.self_attn.q_proj.weight',
+  'model.layers.0.self_attn.k_proj.weight',
+  'model.layers.0.self_attn.v_proj.weight',
+  'model.layers.0.self_attn.o_proj.weight',
+  'model.layers.0.post_attention_layernorm.weight',
+  'model.layers.0.mlp.gate_proj.weight',
+  'model.layers.0.mlp.up_proj.weight',
+  'model.layers.0.mlp.down_proj.weight',
+  'model.norm.weight',
+  'lm_head.weight',
+);
+
+my $project_root = "$FindBin::RealBin/..";
+my $out          = "$project_root/share/tinyllm";
+my $cache        = "$project_root/var/tmp/tinyllm-src";
+my $force        = 0;
+my $help         = 0;
+GetOptions(
+  'out=s'   => \$out,
+  'cache=s' => \$cache,
+  'force'   => \$force,
+  'help|h'  => \$help,
+) or die "iczelia-tinyllm-convert: bad options; --help for usage\n";
+
+if ($help) {
+  print <<'USAGE';
+iczelia-tinyllm-convert - convert arnir0/Tiny-LLM for the Perl slop engine
+
+  --out <dir>    output dir (default: share/tinyllm under repo root)
+  --cache <dir>  download cache (default: var/tmp/tinyllm-src)
+  --force        re-convert even if outputs already exist
+  --help, -h     this message
+
+Network: fetches ~28 MB once from huggingface.co via curl. Re-runs are
+idempotent unless --force.
+USAGE
+  exit 0;
+}
+
+if (!$force && -s "$out/weights.bin" && -s "$out/manifest.json") {
+  print STDERR "iczelia-tinyllm-convert: already present in $out (use --force to rebuild)\n";
+  exit 0;
+}
+
+make_path($cache) unless -d $cache;
+make_path($out)   unless -d $out;
+
+for my $f (qw(config.json tokenizer.json model.safetensors)) {
+  my $dest = "$cache/$f";
+  next if -s $dest;
+  my $url  = "$HF/$f";
+  print STDERR "  fetching $url\n";
+  my $tmp = "$dest.part";
+  my $rc  = system('curl', '-fsSL', '--max-time', '300', '-o', $tmp, $url);
+  if ($rc != 0) {
+    unlink $tmp;
+    die "curl failed for $url (exit $rc)\n";
+  }
+  rename $tmp, $dest or die "rename $tmp -> $dest: $!\n";
+}
+
+# Header: 8 bytes little-endian u64 = N; then N bytes of JSON describing
+# every tensor (dtype, shape, data_offsets). The raw tensor bytes start
+# at offset 8 + N.
+print STDERR "parsing safetensors\n";
+open my $sf, '<:raw', "$cache/model.safetensors"
+  or die "open model.safetensors: $!";
+my $hdr_len_raw;
+read($sf, $hdr_len_raw, 8) == 8 or die "short header length read";
+my ($hdr_len) = unpack 'Q<', $hdr_len_raw;
+my $hdr_json;
+read($sf, $hdr_json, $hdr_len) == $hdr_len or die "short header read";
+
+my $hdr = JSON::PP->new->utf8(1)->decode($hdr_json);
+local $/;
+my $blob = <$sf>;
+close $sf;
+
+# --- dtype conversion ------------------------------------------------------
+# F16 / BF16 conversion via a 256 KB lookup table that maps every
+# 16-bit input to its 4-byte F32 representation. Building the LUT once
+# turns the conversion into an unpack + array-slice + join per chunk.
+sub _f16_bits_to_f32_int {
+  my ($h) = @_;
+  my $sign = ($h >> 15) & 0x1;
+  my $exp  = ($h >> 10) & 0x1F;
+  my $mant = $h & 0x3FF;
+  if ($exp == 0) {
+    return $sign << 31 if $mant == 0;
+    while (!($mant & 0x400)) {$mant <<= 1; $exp--}
+    $exp++;
+    $mant &= 0x3FF;
+    return ($sign << 31) | (($exp + 112) << 23) | ($mant << 13);
+  }
+  if ($exp == 31) {
+    return ($sign << 31) | (0xFF << 23) | ($mant << 13);
+  }
+  return ($sign << 31) | (($exp + 112) << 23) | ($mant << 13);
+}
+
+my (@F16_LUT, @BF16_LUT);
+
+sub _build_luts {
+  return if @F16_LUT;
+  for my $h (0 .. 65535) {
+    $F16_LUT[$h] = pack 'L<', _f16_bits_to_f32_int($h);
+
+    # bf16 is the top 16 bits of an f32; an f32 LE is just two zero
+    # bytes followed by the bf16 LE bytes.
+    $BF16_LUT[$h] = "\0\0" . pack('S<', $h);
+  }
+}
+
+sub _convert_chunked {
+  my ($bytes, $lut) = @_;
+  my $n     = length($bytes) / 2;
+  my $chunk = 1 << 18;    # 256k elements per pass
+  my $out   = '';
+  for (my $i = 0; $i < $n; $i += $chunk) {
+    my $cn = ($i + $chunk > $n) ? $n - $i : $chunk;
+    my @h  = unpack 'S<*', substr($bytes, $i * 2, $cn * 2);
+    $out .= join '', @{$lut}[@h];
+  }
+  return $out;
+}
+
+sub tensor_to_f32 {
+  my ($meta) = @_;
+  my ($a, $b) = @{$meta->{data_offsets}};
+  my $raw = substr($blob, $a, $b - $a);
+  my $dt  = $meta->{dtype};
+  return $raw                                   if $dt eq 'F32';
+  return _convert_chunked($raw, \@F16_LUT)      if $dt eq 'F16';
+  return _convert_chunked($raw, \@BF16_LUT)     if $dt eq 'BF16';
+  die "unsupported dtype: $dt\n";
+}
+
+print STDERR "converting tensors\n";
+_build_luts();
+
+my $offset = 0;
+my @layout;
+my $weights_path = "$out/weights.bin";
+my $tmp_w        = "$weights_path.part";
+open my $wf, '>:raw', $tmp_w or die "open $tmp_w: $!";
+for my $name (@TENSORS) {
+  my $meta = $hdr->{$name};
+  defined $meta or die "tensor missing in safetensors header: $name\n";
+  my $f32   = tensor_to_f32($meta);
+  my $shape = $meta->{shape};
+  my $nelem = 1;
+  $nelem *= $_ for @$shape;
+  die "size mismatch for $name: got ".length($f32)." want ".($nelem*4)
+    unless length($f32) == $nelem * 4;
+  print $wf $f32;
+  push @layout, {
+    name => $name, shape => $shape, offset => $offset, nelem => $nelem
+  };
+  $offset += $nelem;
+}
+close $wf;
+rename $tmp_w, $weights_path or die "rename: $!";
+print STDERR "  wrote $weights_path ($offset fp32 elements, ${\ ($offset * 4) } bytes)\n";
+
+print STDERR "parsing tokenizer\n";
+open my $tf, '<:raw', "$cache/tokenizer.json" or die $!;
+my $tok_json = <$tf>;
+close $tf;
+my $tok = JSON::PP->new->utf8(1)->decode($tok_json);
+
+open my $cf, '<:raw', "$cache/config.json" or die $!;
+my $cfg_json = <$cf>;
+close $cf;
+my $cfg = JSON::PP->new->utf8(1)->decode($cfg_json);
+
+my $model_section = $tok->{model};
+die "unsupported tokenizer model type: " . ($model_section->{type} // '?')
+  unless ($model_section->{type} // '') eq 'BPE';
+
+my $vocab = $model_section->{vocab};
+my @merges;
+for my $m (@{$model_section->{merges} || []}) {
+  if (ref $m eq 'ARRAY') {
+    push @merges, [$m->[0], $m->[1]];
+  }
+  else {
+    my @parts = split / /, $m, 2;
+    push @merges, \@parts;
+  }
+}
+
+my $vsz = scalar keys %$vocab;
+my @id_to_piece;
+$#id_to_piece = $vsz - 1;
+$id_to_piece[$_] = '' for 0 .. $vsz - 1;
+while (my ($piece, $id) = each %$vocab) {
+  next if $id < 0 || $id >= $vsz;
+  $id_to_piece[$id] = $piece;
+}
+
+my %special;
+for my $a (@{$tok->{added_tokens} || []}) {
+  $special{$a->{id}} = 1 if $a->{special};
+}
+my @special_ids = sort {$a <=> $b} keys %special;
+
+my $manifest = {
+  config => {
+    hidden_size              => $cfg->{hidden_size} + 0,
+    intermediate_size        => $cfg->{intermediate_size} + 0,
+    num_attention_heads      => $cfg->{num_attention_heads} + 0,
+    num_key_value_heads      => $cfg->{num_key_value_heads} + 0,
+    num_hidden_layers        => $cfg->{num_hidden_layers} + 0,
+    vocab_size               => $cfg->{vocab_size} + 0,
+    max_position_embeddings  => $cfg->{max_position_embeddings} + 0,
+    rms_norm_eps             => $cfg->{rms_norm_eps} + 0,
+    bos_token_id             => $cfg->{bos_token_id} + 0,
+    eos_token_id             => $cfg->{eos_token_id} + 0,
+    rope_theta               => ($cfg->{rope_theta} // 10000.0) + 0,
+  },
+  tensors   => \@layout,
+  tokenizer => {
+    vocab         => $vocab,
+    merges        => \@merges,
+    id_to_piece   => \@id_to_piece,
+    special_ids   => \@special_ids,
+    byte_fallback => $model_section->{byte_fallback} ? JSON::PP::true() : JSON::PP::false(),
+    unk_id        => ($vocab->{'<unk>'} // 0) + 0,
+    bos_id        => ($vocab->{'<s>'}   // 1) + 0,
+    eos_id        => ($vocab->{'</s>'}  // 2) + 0,
+  },
+};
+
+my $manifest_path = "$out/manifest.json";
+my $tmp_m         = "$manifest_path.part";
+open my $mf, '>:raw', $tmp_m or die "open $tmp_m: $!";
+print $mf JSON::PP->new->utf8(1)->encode($manifest);
+close $mf;
+rename $tmp_m, $manifest_path or die "rename: $!";
+print STDERR "  wrote $manifest_path\n";
+
+print STDERR "done\n";

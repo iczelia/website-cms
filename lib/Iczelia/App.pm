@@ -44,6 +44,7 @@ use Iczelia::Handlers::Subpages;
 use Iczelia::Handlers::Git;
 use Iczelia::Handlers::Analytics;
 use Iczelia::Handlers::Backup;
+use Iczelia::Slop;
 use File::Path qw(make_path);
 
 sub build {
@@ -131,12 +132,25 @@ sub build {
     Iczelia::Warmer->new(cfg => $cfg)->run;
   };
 
+  # AI-slop bot trap. Load weights here (pre-fork) so the kernel can
+  # COW-share the ~52 MB model across every worker; if the share/tinyllm
+  # directory is absent the loader just no-ops and the trap serves
+  # stubs instead of generated slop.
+  my $slop = Iczelia::Slop->new(db => $db, cfg => $cfg);
+  eval {$slop->ensure_loaded};
+  warn "slop: ensure_loaded failed: $@" if $@;
+  my $pre_dispatch = sub {
+    my ($req) = @_;
+    return $slop->maybe_serve($req);
+  };
+
   return {
     ctx            => $ctx,
     router         => $router,
     dynamic_lookup => $dynamic_lookup,
     not_found      => $not_found,
     warmer         => $warmer_cb,
+    pre_dispatch   => $pre_dispatch,
   };
 }
 

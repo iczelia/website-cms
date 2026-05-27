@@ -23,9 +23,11 @@ FROM docker.io/library/debian:bookworm-slim AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Runtime packages, then the cpanfile deps (DBI, DBD::SQLite,
-# IO::Compress::Brotli are XS; from CPAN since IO::Compress::Brotli isn't
-# in Debian). The build toolchain is installed and purged in this layer.
+# Runtime packages + the cpanfile deps (DBI, DBD::SQLite,
+# IO::Compress::Brotli, Inline::C are XS; from CPAN since they aren't
+# all in Debian). The C toolchain stays installed at this layer
+# because Inline::C in lib/Iczelia/Slop/Model.pm needs gcc + headers
+# during the later pre-compile RUN; a final RUN purges them.
 COPY cpanfile /tmp/cpanfile
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -45,8 +47,6 @@ RUN apt-get update && \
     && apt-get install -y --no-install-recommends \
         cpanminus build-essential libperl-dev libbrotli-dev libcrypt-dev cmake \
     && (cd /tmp && cpanm --notest --installdeps .) \
-    && apt-get purge -y --auto-remove cpanminus build-essential libperl-dev libbrotli-dev libcrypt-dev cmake \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cpanm /tmp/cpanfile
 
 # oxipng isn't in Debian bookworm; pull the matching static-musl binary
@@ -88,7 +88,39 @@ WORKDIR /opt/iczelia
 COPY bin/    bin/
 COPY lib/    lib/
 COPY share/  share/
-RUN chmod +x bin/iczelia-server bin/iczelia-init bin/iczelia-passwd bin/iczelia-fetch-activity
+RUN chmod +x bin/iczelia-server bin/iczelia-init bin/iczelia-passwd \
+             bin/iczelia-fetch-activity bin/iczelia-tinyllm-convert
+
+# AI-slop bot trap.
+RUN set -eu; \
+    if [ ! -s share/tinyllm/weights.bin ]; then \
+      mkdir -p /tmp/tinyllm-src; \
+      if perl bin/iczelia-tinyllm-convert \
+          --out /opt/iczelia/share/tinyllm \
+          --cache /tmp/tinyllm-src; then \
+        echo "tinyllm: converted"; \
+      else \
+        echo "WARN: tinyllm conversion failed; slop trap will serve stubs" >&2; \
+      fi; \
+      rm -rf /tmp/tinyllm-src; \
+    else \
+      echo "tinyllm: already present in image (skipped)"; \
+    fi
+
+# Pre-compile the Inline::C inference engine.
+RUN set -eu; \
+    install -d -m 0755 /opt/iczelia/_Inline; \
+    if perl -Ilib -MIczelia::Slop::Model -e1 >/tmp/inline.log 2>&1; then \
+      echo "inline: compiled"; \
+    else \
+      echo "WARN: inline pre-compile failed; slop trap will fail at runtime" >&2; \
+      tail -40 /tmp/inline.log >&2 || true; \
+    fi; \
+    rm -f /tmp/inline.log; \
+    apt-get purge -y --auto-remove \
+        cpanminus build-essential libperl-dev libbrotli-dev libcrypt-dev cmake; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN install -d -o root -g root -m 0755 /etc/iczelia
 COPY deploy/iczelia.container.conf /etc/iczelia/iczelia.conf
