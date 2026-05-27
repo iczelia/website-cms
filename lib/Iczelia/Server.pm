@@ -38,11 +38,30 @@ our $SLOW_REQ_S =
   ? $ENV{ICZELIA_SLOW_REQ_S} + 0
   : 0.25;
 
-# Forwarding headers from any other peer are ignored. 'unix' covers
-# UNIX-socket peers; the deploy is expected to expose the socket via
-# group iczelia (mode 0660). ::ffff:127.0.0.1 covers IPv4-mapped
-# loopback under dual-stack listeners.
-my %TRUSTED_HOPS = map {$_ => 1} qw(127.0.0.1 ::1 ::ffff:127.0.0.1 unix);
+# Forwarding headers from any other peer are ignored. The daemon binds
+# only loopback / unix, so the peer is always a same-host hop: nginx on
+# 127.0.0.1, or -- under rootless podman/docker -- the netns NAT
+# gateway (slirp4netns 10.0.0.0/8, pasta 169.254.0.0/16). Treat any
+# private / loopback / link-local source as trusted upstream so the
+# container case works without per-deploy configuration.
+sub _is_trusted_peer {
+  my ($peer) = @_;
+  return 0 unless defined $peer && length $peer;
+  return 1 if $peer eq 'unix' || $peer eq '::1';
+  $peer =~ s/^::ffff://;    # unwrap IPv4-mapped IPv6
+  if ($peer =~ /^(\d+)\.(\d+)\.\d+\.\d+\z/) {
+    my ($a, $b) = ($1 + 0, $2 + 0);
+    return 1 if $a == 127;                            # loopback
+    return 1 if $a == 10;                             # RFC1918
+    return 1 if $a == 192 && $b == 168;               # RFC1918
+    return 1 if $a == 172 && $b >= 16 && $b <= 31;    # RFC1918
+    return 1 if $a == 169 && $b == 254;               # link-local
+    return 0;
+  }
+  return 1 if $peer =~ /^f[cd][0-9a-f]{2}:/i;         # ULA fc00::/7
+  return 1 if $peer =~ /^fe[89ab][0-9a-f]:/i;         # link-local fe80::/10
+  return 0;
+}
 
 sub new {
   my ($class, %arg) = @_;
@@ -351,7 +370,7 @@ sub _read_or_400 {
 sub _apply_trusted_xff {
   my ($req, $peer) = @_;
   $req->{remote} = $peer;
-  return unless $TRUSTED_HOPS{$peer};
+  return unless _is_trusted_peer($peer);
   my $real = $req->{headers}{'x-real-ip'};
   if (defined $real) {$real =~ s/^\s+//; $real =~ s/\s+$//}
   if (defined $real && length $real) {
@@ -493,6 +512,13 @@ sub _minify_html_if_uncached {
   return unless $resp->{headers};
   return unless ($resp->{headers}{'Content-Type'} // '') =~ m{^text/html\b}i;
   return unless defined $resp->{body} && length $resp->{body};
+
+  # If the handler already encoded the body (the gzip-bomb honeypot
+  # sets Content-Encoding: gzip with a pre-gzipped body), minifying
+  # would shred the compressed stream and clients silently fall back
+  # to the wire bytes.
+  return if exists $resp->{headers}{'Content-Encoding'};
+
   $resp->{body} = Iczelia::Minify::html($resp->{body});
 }
 
