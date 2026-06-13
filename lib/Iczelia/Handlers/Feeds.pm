@@ -37,6 +37,23 @@ sub register {
   $router->get('/rss.xml',     sub {_rss($ctx)});       # alias
   $router->get('/sitemap.xml', sub {_sitemap($ctx)});
   $router->get('/robots.txt',  sub {_robots($ctx)});
+
+  # Feed-discovery URLs that readers and humans habitually guess at.
+  # Permanently redirect them to the canonical feeds: atom-flavoured
+  # paths to the Atom feed, everything else to RSS 2.0 (the feed the
+  # page <head> advertises as application/rss+xml).
+  my %ALIAS = (
+    '/feed.xml'  => [qw( /atom /atom/ /atom.xml /feed.atom )],
+    '/index.xml' => [
+      qw( /rss /rss/ /feed /feed/ /feeds /feeds/
+        /rss.rdf /feed.rss /index.rss )
+    ],
+  );
+  for my $target (sort keys %ALIAS) {
+    for my $from (@{$ALIAS{$target}}) {
+      $router->get($from, sub {Iczelia::HTTP::redirect($target, status => 301)});
+    }
+  }
 }
 
 sub _setting {

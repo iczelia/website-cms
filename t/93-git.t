@@ -82,6 +82,26 @@ is(Iczelia::Highlight::lang_for_file('unknown',
     "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n"),
   'diff', 'content heuristic detects extensionless diff');
 
+# Blob media embedding: images and PDFs render inline, other binaries
+# only get a download link, and oversized files fall back to a link.
+{
+  my $img = Iczelia::Handlers::Git::_embed_media_html('image/png', 4096,
+    '/git/r/raw/a.png');
+  like($img, qr{<img\b[^>]*\bsrc="/git/r/raw/a\.png"}, 'image embeds as <img>');
+
+  my $pdf = Iczelia::Handlers::Git::_embed_media_html('application/pdf', 8192,
+    '/git/r/raw/a.pdf');
+  like($pdf, qr{<object\b[^>]*\bdata="/git/r/raw/a\.pdf"[^>]*\btype="application/pdf"},
+    'PDF embeds as <object>');
+
+  is(Iczelia::Handlers::Git::_embed_media_html('application/octet-stream', 10,
+    '/git/r/raw/a.bin'), undef, 'opaque binary is not embedded');
+
+  is(Iczelia::Handlers::Git::_embed_media_html('image/png', 64 * 1024 * 1024,
+    '/git/r/raw/big.png'), undef,
+    'file past the raw cap is not embedded (broken-frame guard)');
+}
+
 # SafeMarkup max=>N raises the input cap.
 {
   my $big = '# h' x 20000;   # ~80 KB

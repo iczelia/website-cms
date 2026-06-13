@@ -503,25 +503,25 @@ sub _blob {
       escape_url($row->{slug}), _join_url_path('', $clean));
     my $body_html;
     if (!defined $bytes) {
-      $body_html = sprintf('<p class="empty">file is %s; '
-        . '<a href="%s">view raw</a>.</p>',
-        Iczelia::Subpages::fmt_size($size), $raw);
+      # Too large to load into the view. We can still embed images and
+      # PDFs straight from the raw endpoint, identified by extension;
+      # everything else just gets a download link.
+      my $ct = Iczelia::Subpages::content_type_for($clean);
+      $body_html = _embed_media_html($ct, $size, $raw)
+        // sprintf('<p class="empty">file is %s; '
+          . '<a href="%s">view raw</a>.</p>',
+          Iczelia::Subpages::fmt_size($size), $raw);
     }
     else {
       my $type = Iczelia::Subpages::detect_file_type($clean, $bytes);
       my $ct = $type->{content_type};
       if ($type->{is_binary}) {
-        if ($ct =~ m{^image/(?:png|jpe?g|gif|webp)$} && $size <= 1_000_000) {
-          $body_html = sprintf('<p class="binary">binary, %s; '
-            . '<a href="%s">view raw</a>.</p>'
-            . '<p><img class="git-img" src="%s" alt=""></p>',
-            Iczelia::Subpages::fmt_size($size), $raw, $raw);
-        }
-        else {
-          $body_html = sprintf('<p class="binary">binary file, %s; '
+        # Never highlight binary content. Embed images / PDFs; otherwise
+        # offer the raw download only.
+        $body_html = _embed_media_html($ct, $size, $raw)
+          // sprintf('<p class="binary">binary file, %s; '
             . '<a href="%s">view raw</a>.</p>',
             Iczelia::Subpages::fmt_size($size), $raw);
-        }
       }
       else {
         my $decoded = eval { Encode::decode('UTF-8', $bytes, Encode::FB_CROAK()) };
@@ -768,6 +768,35 @@ sub _readme_html {
       . '<pre><code>' . escape_html($text) . '</code></pre></section>';
   }
   return '';
+}
+
+# Inline preview for binary blobs the browser can render itself. Raster
+# images become an <img> and PDFs an <object>, both sourced from the raw
+# endpoint so even files too large to load into the view still embed.
+# Returns undef for anything that shouldn't be embedded (the caller then
+# falls back to a plain download link).
+sub _embed_media_html {
+  my ($ct, $size, $raw) = @_;
+
+  # Past this the raw endpoint refuses to serve the bytes, so an embed
+  # would just render a broken frame; let the caller link instead.
+  return undef if defined $size && $size > RAW_MAX_BYTES;
+  my $sz = Iczelia::Subpages::fmt_size($size);
+  if ($ct =~ m{^image/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon|tiff)$}) {
+    return sprintf(
+      '<p class="binary">image, %s; <a href="%s">view raw</a>.</p>'
+      . '<p><img class="git-img" src="%s" alt="" loading="lazy"></p>',
+      $sz, $raw, $raw);
+  }
+  if ($ct =~ m{^application/pdf\b}) {
+    return sprintf(
+      '<p class="binary">PDF, %s; <a href="%s">view raw</a>.</p>'
+      . '<object class="git-pdf" data="%s" type="application/pdf">'
+      . '<p>inline preview unavailable; '
+      . '<a href="%s">download the PDF</a>.</p></object>',
+      $sz, $raw, $raw, $raw);
+  }
+  return undef;
 }
 
 # Wrap a highlighted <pre class="hl ..."><code>...</code></pre> in a

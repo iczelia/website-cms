@@ -162,6 +162,8 @@ table.git-lines {
             color: #b9c8d6; }
 .git-img { max-width: 100%;
            border: 1px solid rgba(110,145,180,0.35); }
+.git-pdf { width: 100%; height: 80vh; min-height: 480px;
+           border: 1px solid rgba(110,145,180,0.35); background: #fff; }
 .binary, .empty { color: #8aa0b8; font-size: 13px; }
 
 /* Tab-size preference toggle in the footer of each page. */
