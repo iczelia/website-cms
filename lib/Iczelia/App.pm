@@ -79,7 +79,7 @@ sub build {
   );
   my $auth = Iczelia::Auth->new(
     db            => $db,
-    cookie_secret => $cfg->{'cookie-secret'} || _shared_secret($db),
+    cookie_secret => $cfg->{'cookie-secret'},
   );
   my $fetcher =
     Iczelia::Fetcher->new(db => $db, render => $rnd, cache => $cache);
@@ -152,28 +152,6 @@ sub build {
     warmer         => $warmer_cb,
     pre_dispatch   => $pre_dispatch,
   };
-}
-
-# Settings-backed fallback when the operator hasn't pinned a secret in
-# config. INSERT OR IGNORE means concurrent workers converge on one
-# value; every worker reads the same string so cookies validate
-# regardless of which worker minted them.
-sub _shared_secret {
-  my ($db) = @_;
-  my $existing = $db->setting('auth.cookie_secret');
-  return $existing if defined $existing && length($existing) >= 64;
-  open my $fh, '<:raw', '/dev/urandom' or die "/dev/urandom: $!";
-  my $b;
-  sysread $fh, $b, 32;
-  close $fh;
-  my $hex = unpack 'H*', $b;
-  $db->do_(q{INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)},
-    'auth.cookie_secret', $hex);
-
-  # Re-read so we converge on whoever's INSERT won the race; fall
-  # back to our locally-minted value if the read returns nothing
-  # (settings table wiped under us).
-  return $db->setting('auth.cookie_secret') // $hex;
 }
 
 1;

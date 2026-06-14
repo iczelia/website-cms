@@ -95,8 +95,12 @@ sub admin_vars {
 
   # csrf_form: single-form views' scalar token.
   # csrf_extra: multi-form views' hashref of named tokens to merge.
+  # csrf is reserved: the hash is computed here (layout tokens like
+  # `upload` must always be present), so callers add their own named
+  # tokens through csrf_extra, never by passing csrf wholesale.
   my $csrf_form  = delete $extra{csrf_form} // '';
   my $csrf_extra = delete $extra{csrf_extra} || {};
+  delete $extra{csrf};
 
   my $csrf_hash = {
     logout               => $ctx->auth->csrf_token($sid, 'logout'),
@@ -108,14 +112,17 @@ sub admin_vars {
       $ctx->auth->csrf_token($sid, 'cache:rebuild-cancel'),
     %$csrf_extra,
   };
+
+  # Caller vars first, framework-owned keys last so a stray same-named
+  # extra (e.g. csrf) can never silently override the computed values.
   return {
+    %extra,
     title         => $extra{title}     || 'cms',
     version       => $Iczelia::VERSION || '0.1',
-    csrf          => $csrf_hash,
-    csrf_form     => $csrf_form,
     pending_count => $pending,
     flash         => $extra{flash},
-    %extra,
+    csrf_form     => $csrf_form,
+    csrf          => $csrf_hash,
   };
 }
 

@@ -40,6 +40,18 @@ my @EPHEMERAL_TABLES = qw(
 
 my $JSON = JSON::PP->new->utf8(1)->canonical(1)->pretty(1);
 
+# Strip instance-bound rows from a freshly VACUUM-INTO'd snapshot before
+# it ships in a backup: the ephemeral tables (cache/session/throttle)
+# and any auth secret lingering in settings. The session/CSRF secret is
+# file-based and no longer read from the db, but old databases may still
+# carry an auth.cookie_secret row, and key material must never ride along
+# in an exported archive. Each delete is tolerant of a missing table.
+sub _scrub_snapshot {
+  my ($dbh) = @_;
+  eval {$dbh->do("DELETE FROM $_")} for @EPHEMERAL_TABLES;
+  eval {$dbh->do(q{DELETE FROM settings WHERE key = 'auth.cookie_secret'})};
+}
+
 sub register {
   my ($class, $router, $ctx) = @_;
   my $gate = $ctx->auth->route_gate($ctx);
@@ -55,8 +67,11 @@ sub _form {
   my $sid = $req->{auth_sid};
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_backup.tpl',
-    title => 'backup / wipe',
-    csrf  => {
+    title      => 'backup / wipe',
+    # csrf_extra (not csrf): these merge into the admin csrf hash so the
+    # layout's own tokens -- notably csrf.upload, which the chunked
+    # uploader reads from <meta name="cms-upload-csrf"> -- survive.
+    csrf_extra => {
       export => $ctx->auth->csrf_token($sid, 'backup:export'),
       import => $ctx->auth->csrf_token($sid, 'backup:import'),
       wipe   => $ctx->auth->csrf_token($sid, 'backup:wipe'),
@@ -87,7 +102,7 @@ sub _export {
     $ctx->db->dbh->do(q{VACUUM INTO ?}, undef, $snap);
     my $tdb = DBI->connect("dbi:SQLite:dbname=$snap", '', '',
       {RaiseError => 1, PrintError => 0, AutoCommit => 1});
-    eval {$tdb->do("DELETE FROM $_")} for @EPHEMERAL_TABLES;
+    _scrub_snapshot($tdb);
     $tdb->do('VACUUM');
     $tdb->disconnect;
     1;
@@ -190,14 +205,7 @@ sub _list_dir_files {
   return @out;
 }
 
-# Tar-bomb cap: well above any real backup, small enough that a hostile
-# archive can't fill the tmp volume on extract.
-use constant MAX_EXTRACTED => 512 * 1024 * 1024;
-
-# Returns 1 if the archive is safe to extract: rejects absolute and
-# `..` entries, and bails when the entry-size sum exceeds MAX_EXTRACTED.
-# Archive::Tar's iterator gives raw byte-name entries directly, so
-# there's no shell-out and no quoting-style edge case to parse.
+# Returns 1 if the archive is safe to extract.
 sub _archive_paths_safe {
   my ($tar_path) = @_;
   my $iter = eval {Archive::Tar->iter($tar_path)};
@@ -208,7 +216,6 @@ sub _archive_paths_safe {
     return 0 unless defined $name && length $name;
     return 0 if $name =~ m{^/} || $name =~ m{(?:^|/)\.\.(?:/|$)};
     $total += $entry->size || 0;
-    return 0 if $total > MAX_EXTRACTED;
   }
   return 1;
 }

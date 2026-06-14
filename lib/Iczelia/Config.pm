@@ -19,6 +19,7 @@ use strict;
 use warnings;
 use Carp          qw(croak);
 use File::Spec    ();
+use File::Path    qw(make_path);
 use FindBin       ();
 use Iczelia::Util qw(detect_cores);
 
@@ -104,16 +105,70 @@ sub _fill_defaults {
   $self->{'media-dir'} ||= "$var/media";
   $self->{'tmp-dir'}   ||= "$var/tmp";
 
-  if (!$self->{'cookie-secret'}) {
-    my $secret_file = "$var/cookie-secret";
-    if (-r $secret_file) {
-      open my $fh, '<', $secret_file or croak "open $secret_file: $!";
-      local $/;
-      $self->{'cookie-secret'} = <$fh>;
-      close $fh;
-      $self->{'cookie-secret'} =~ s/\s+$//;
-    }
+  # Session/CSRF HMAC key. An explicit config or CLI value always wins;
+  # otherwise it is persisted in a file beside the db so it stays stable
+  # across restarts, backups, and wipes, and is shared by every preforked
+  # worker (resolved once in the supervisor, inherited via fork). It must
+  # never be sourced from the database: backups carry the settings table,
+  # so a db-backed secret would rotate on every import and silently
+  # invalidate every live session and CSRF token.
+  $self->{'cookie-secret'} = _resolve_cookie_secret($self->{db})
+    unless length $self->{'cookie-secret'};
+}
+
+# Path of the persistent secret: <state-dir>/cookie-secret, where
+# state-dir is the directory holding the sqlite db. That keeps it on the
+# same writable volume as the rest of the instance state and matches
+# what deploy/entrypoint.sh seeds in the container.
+sub _secret_file_for {
+  my ($db_path) = @_;
+  my ($vol, $dir) = File::Spec->splitpath($db_path);
+  my $state = File::Spec->catpath($vol, $dir, '');
+  $state = '.' unless length $state;
+  return File::Spec->catfile($state, 'cookie-secret');
+}
+
+sub _resolve_cookie_secret {
+  my ($db_path) = @_;
+  my $file = _secret_file_for($db_path);
+
+  if (-e $file) {
+    open my $fh, '<', $file or croak "config: open $file: $!";
+    local $/;
+    my $hex = <$fh>;
+    close $fh;
+    $hex //= '';
+    $hex =~ s/\s+//g;
+    return $hex if length($hex) >= 64;
+    croak "config: $file holds a short/empty secret (need >= 64 hex "
+      . "chars); delete it to regenerate, or pin cookie-secret in config";
   }
+  return _generate_cookie_secret($file);
+}
+
+# 32 CSPRNG bytes, hex-encoded, written 0600 via temp+rename so a
+# half-written file can never be read. Runs once in the supervisor
+# before any worker fork.
+sub _generate_cookie_secret {
+  my ($file) = @_;
+  my ($vol, $dir) = File::Spec->splitpath($file);
+  my $state = File::Spec->catpath($vol, $dir, '');
+  make_path($state) if length($state) && !-d $state;
+
+  open my $rnd, '<:raw', '/dev/urandom' or croak "config: /dev/urandom: $!";
+  my $bytes = '';
+  read($rnd, $bytes, 32) == 32
+    or croak "config: short read from /dev/urandom";
+  close $rnd;
+  my $hex = unpack 'H*', $bytes;
+
+  my $tmp = "$file.tmp.$$";
+  open my $out, '>', $tmp or croak "config: write $tmp: $!";
+  chmod 0600, $tmp;
+  print {$out} $hex  or croak "config: write $tmp: $!";
+  close $out         or croak "config: close $tmp: $!";
+  rename $tmp, $file or croak "config: rename $tmp -> $file: $!";
+  return $hex;
 }
 
 sub _validate {

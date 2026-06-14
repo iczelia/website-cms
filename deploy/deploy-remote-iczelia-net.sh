@@ -26,7 +26,7 @@
 #                  no new system deps were introduced.
 #
 # Environment overrides:
-#   REMOTE         SSH target          (default: ubuntu@iczelia.net)
+#   REMOTE         SSH target          (default: root@13.140.186.200)
 #   REMOTE_SRC     Source dir on host  (default: /opt/iczelia-src)
 #   REMOTE_TAG     Image tag           (default: localhost/iczelia:latest)
 #   REMOTE_SVC     Systemd unit name   (default: iczelia)
@@ -36,7 +36,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-REMOTE="${REMOTE:-ubuntu@iczelia.net}"
+REMOTE="${REMOTE:-root@13.140.186.200}"
 REMOTE_SRC="${REMOTE_SRC:-/opt/iczelia-src}"
 REMOTE_TAG="${REMOTE_TAG:-localhost/iczelia:latest}"
 REMOTE_SVC="${REMOTE_SVC:-iczelia}"
