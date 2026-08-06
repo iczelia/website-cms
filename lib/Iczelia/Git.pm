@@ -99,14 +99,37 @@ sub bare_repo_path {
   return File::Spec->catdir($var_dir, 'git', "$slug.git");
 }
 
-# Public mirror URLs only in v1. http(s) schemes only. The character
-# class keeps SSRF surface small.
+# http(s) and ssh only. file://, git:// and ext:: stay rejected: the
+# first two are unauthenticated or local-filesystem reads, and ext::
+# hands git an arbitrary command line.
 sub valid_mirror_url {
   my ($u) = @_;
   return 0 unless defined $u && length $u;
   return 0 if $u =~ /[\s\x00-\x1f\x7f]/;
-  return 0 unless $u =~ m{\A https? :// [A-Za-z0-9._\-]+ (?::\d+)? (?:/\S*)? \z}x;
-  return 1;
+  return 1 if $u =~ m{\A https? :// [A-Za-z0-9._\-]+ (?::\d+)? (?:/\S*)? \z}x;
+  return 1 if is_ssh_url($u);
+  return 0;
+}
+
+# ssh://[user@]host[:port]/path and the scp-style [user@]host:path.
+# `<transport>::<address>` is git's remote-helper syntax and is shaped
+# like a scp-style remote, so it is rejected first. So is a leading '-',
+# which ssh would read as an option.
+sub is_ssh_url {
+  my ($u) = @_;
+  return 0 unless defined $u && length $u;
+  return 0 if $u =~ /[\s\x00-\x1f\x7f]/;
+  return 0 if $u =~ /\A[A-Za-z0-9+.\-]*::/;
+  return 0 if $u =~ /\A-/;
+  return 1
+    if $u =~ m{\A ssh:// (?: [A-Za-z0-9._\-]+ @ )? [A-Za-z0-9][A-Za-z0-9._\-]*
+                 (?::\d+)? / \S+ \z}x;
+
+  # scp-style: a '/' before the ':' makes it a local path, not a remote.
+  return 1
+    if $u =~ m{\A (?: [A-Za-z0-9._\-]+ @ )? [A-Za-z0-9][A-Za-z0-9._\-]*
+                 : [^\-/:\s] \S* \z}x;
+  return 0;
 }
 
 # Run git with a list of args. Returns (stdout_bytes, stderr_bytes, exit_code).
@@ -130,7 +153,7 @@ sub _run {
   my ($wr, $rd, $er);
   $er = gensym;
 
-  local %ENV = (%ENV, %GIT_ENV);
+  local %ENV = (%ENV, %GIT_ENV, %{$opt{env} || {}});
 
   my $pid = IPC::Open3::open3($wr, $rd, $er, $bin, @args);
   binmode $wr if defined $stdin;
@@ -512,8 +535,42 @@ sub import_zip {
 }
 
 # Mirror clone: `git clone --mirror`. Refuses non-http(s) URLs.
+sub _shq {
+  my ($s) = @_;
+  $s =~ s/'/'\\''/g;
+  return "'$s'";
+}
+
+# GIT_SSH_COMMAND for an ssh mirror. git hands this to /bin/sh, so
+# every word is single-quoted. BatchMode turns a passphrase prompt into
+# an immediate failure instead of a 600s warmer stall; IdentitiesOnly
+# stops ssh-agent keys being offered ahead of the configured one.
+sub ssh_command {
+  my (%opt) = @_;
+  my $strict = $opt{strict};
+  $strict = 'accept-new' unless defined $strict && length $strict;
+  croak "invalid StrictHostKeyChecking: $strict"
+    unless $strict =~ /\A(?:yes|no|accept-new)\z/;
+
+  my @c = ('ssh', '-o', 'BatchMode=yes', '-o',
+    "StrictHostKeyChecking=$strict");
+  push @c, '-o', "UserKnownHostsFile=$opt{known_hosts}"
+    if defined $opt{known_hosts} && length $opt{known_hosts};
+  push @c, '-i', $opt{key}, '-o', 'IdentitiesOnly=yes'
+    if defined $opt{key} && length $opt{key};
+  return join ' ', map {_shq($_)} @c;
+}
+
+# %opt{ssh} is the hashref ssh_command takes. Set on every transport;
+# git ignores GIT_SSH_COMMAND on http(s).
+sub _ssh_env {
+  my (%opt) = @_;
+  my $ssh = $opt{ssh} or return {};
+  return {GIT_SSH_COMMAND => ssh_command(%$ssh)};
+}
+
 sub clone_mirror {
-  my ($repo_path, $url) = @_;
+  my ($repo_path, $url, %opt) = @_;
   _need;
   return (0, "invalid mirror url", undef)
     unless valid_mirror_url($url);
@@ -522,6 +579,7 @@ sub clone_mirror {
   my (undef, $err, $rc) = _run(
     args    => [qw(clone --mirror --quiet --), $url, $repo_path],
     timeout => 600,
+    env     => _ssh_env(%opt),
   );
   if ($rc != 0) {
     chomp $err;
@@ -532,13 +590,14 @@ sub clone_mirror {
 
 # Pull/update a mirror. Calls `git remote update --prune`.
 sub pull_mirror {
-  my ($repo_path) = @_;
+  my ($repo_path, %opt) = @_;
   _need;
   return (0, "no such repo", undef) unless -d "$repo_path/objects";
   my (undef, $err, $rc) = _run(
     cwd     => $repo_path,
     args    => [qw(remote update --prune)],
     timeout => 600,
+    env     => _ssh_env(%opt),
   );
   if ($rc != 0) {
     chomp $err;

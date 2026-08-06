@@ -21,9 +21,13 @@ use File::Path  qw(make_path remove_tree);
 use Fcntl       qw(:flock);
 use Iczelia::HTTP     ();
 use Iczelia::Git      ();
+use Iczelia::Git::Mirrors ();
 use Iczelia::Subpages ();
 use Iczelia::Upload   ();
 use Iczelia::Time     qw(ts_fmt);
+
+use constant MIRROR_URL_ERROR =>
+  'mirror url must be http://, https://, ssh:// or user@host:path';
 
 sub register {
   my ($class, $router, $ctx) = @_;
@@ -36,6 +40,9 @@ sub register {
   $router->post('/admin/git/:id/pull-now',   $gate->(\&_pull_now));
   $router->post('/admin/git/:id/import-zip', $gate->(\&_import_zip));
   $router->post('/admin/git/:id/delete',     $gate->(\&_delete));
+  $router->post('/admin/git/groups/new',        $gate->(\&_group_create));
+  $router->post('/admin/git/groups/:id/save',   $gate->(\&_group_save));
+  $router->post('/admin/git/groups/:id/delete', $gate->(\&_group_delete));
 }
 
 sub _var_dir {
@@ -52,9 +59,11 @@ sub _render_list {
   my ($ctx, $req, %opt) = @_;
   my $sid  = $req->{auth_sid};
   my $rows = $ctx->db->all(
-    q{SELECT id, slug, title, owner, mirror_url, last_pulled_at,
-              last_pull_status, last_pull_error, head_sha, updated_at
-        FROM git_repos ORDER BY slug}
+    q{SELECT r.id, r.slug, r.title, r.owner, r.mirror_url, r.last_pulled_at,
+              r.last_pull_status, r.last_pull_error, r.head_sha, r.updated_at,
+              r.group_id, g.name AS group_name
+        FROM git_repos r LEFT JOIN git_groups g ON g.id = r.group_id
+       ORDER BY r.slug}
   );
   for my $r (@$rows) {
     $r->{url}            = "/git/$r->{slug}/";
@@ -65,12 +74,24 @@ sub _render_list {
     $r->{csrf_del}       =
       $ctx->auth->csrf_token($sid, "gitrepo:del:$r->{id}");
   }
+
+  my $groups = _groups($ctx->db);
+  for my $g (@$groups) {
+    $g->{repo_count} = $ctx->db->one(
+      'SELECT COUNT(*) FROM git_repos WHERE group_id=?', $g->{id}) // 0;
+    $g->{csrf_save} = $ctx->auth->csrf_token($sid, "gitgroup:save:$g->{id}");
+    $g->{csrf_del}  = $ctx->auth->csrf_token($sid, "gitgroup:del:$g->{id}");
+  }
+
   return Iczelia::Handlers::Admin::render_admin(
     $ctx, $req, 'admin_git_list.tpl',
     title          => 'git repositories',
     git_available  => (Iczelia::Git::available() ? 1 : 0),
     repos          => $rows,
+    groups         => $groups,
+    group_options  => _group_options($groups, $opt{group_id}),
     error          => $opt{error},
+    notice         => $opt{notice},
     slug_value     => $opt{slug}        // '',
     title_value    => $opt{title}       // '',
     owner_value    => $opt{owner}       // '',
@@ -78,7 +99,114 @@ sub _render_list {
     mirror_value   => $opt{mirror_url}  // '',
     interval_value => $opt{interval}    // '3600',
     csrf_form      => $ctx->auth->csrf_token($sid, 'gitrepo:new'),
+    csrf_group     => $ctx->auth->csrf_token($sid, 'gitgroup:new'),
   );
+}
+
+sub _groups {
+  my ($db) = @_;
+  return $db->all(
+    'SELECT id, name, position FROM git_groups ORDER BY position, name');
+}
+
+# <option> rows for the group picker. The empty entry is "ungrouped",
+# which is also what a deleted group leaves behind.
+sub _group_options {
+  my ($groups, $selected) = @_;
+  $selected = 0 unless defined $selected && $selected =~ /^\d+$/;
+  my @out = {id => '', name => '(ungrouped)', selected => ($selected ? 0 : 1)};
+  push @out, {
+    id       => $_->{id},
+    name     => $_->{name},
+    selected => ($_->{id} == $selected ? 1 : 0),
+  } for @$groups;
+  return \@out;
+}
+
+sub _group_create {
+  my ($ctx, $req) = @_;
+  my $err = $ctx->auth->require_csrf($req, 'gitgroup:new');
+  return $err if $err;
+  my $name = _trim($req->{params}{name});
+  return _render_list($ctx, $req, error => 'group name required')
+    unless defined $name && length $name;
+  return _render_list($ctx, $req, error => 'group name too long')
+    if length($name) > 120;
+  return _render_list($ctx, $req, error => "group '$name' already exists")
+    if $ctx->db->row('SELECT 1 FROM git_groups WHERE name=?', $name);
+
+  my $now = time;
+  $ctx->db->do_(
+    q{INSERT INTO git_groups(name, position, created_at, updated_at)
+        VALUES(?,?,?,?)},
+    $name, _norm_pos($req->{params}{position}), $now, $now
+  );
+  _bust($ctx);
+  return _render_list($ctx, $req, notice => "group '$name' created.");
+}
+
+sub _group_save {
+  my ($ctx, $req) = @_;
+  my $id = _id($req);
+  my $g  = $ctx->db->row('SELECT * FROM git_groups WHERE id=?', $id)
+    or return Iczelia::HTTP::error(404);
+  my $err = $ctx->auth->require_csrf($req, "gitgroup:save:$id");
+  return $err if $err;
+
+  my $name = _trim($req->{params}{name});
+  return _render_list($ctx, $req, error => 'group name required')
+    unless defined $name && length $name;
+  return _render_list($ctx, $req, error => 'group name too long')
+    if length($name) > 120;
+  my $clash = $ctx->db->row('SELECT id FROM git_groups WHERE name=?', $name);
+  return _render_list($ctx, $req, error => "group '$name' already exists")
+    if $clash && $clash->{id} != $id;
+
+  $ctx->db->do_(
+    'UPDATE git_groups SET name=?, position=?, updated_at=? WHERE id=?',
+    $name, _norm_pos($req->{params}{position}), time, $id
+  );
+  _bust($ctx);
+  return _render_list($ctx, $req, notice => 'group saved.');
+}
+
+sub _group_delete {
+  my ($ctx, $req) = @_;
+  my $id = _id($req);
+  my $g  = $ctx->db->row('SELECT * FROM git_groups WHERE id=?', $id)
+    or return Iczelia::HTTP::error(404);
+  my $err = $ctx->auth->require_csrf($req, "gitgroup:del:$id");
+  return $err if $err;
+
+  # Upgraded databases carry group_id without the REFERENCES clause, so
+  # the detach is done here rather than left to ON DELETE SET NULL.
+  $ctx->db->tx(
+    sub {
+      my $d = shift;
+      $d->do_('UPDATE git_repos SET group_id=NULL WHERE group_id=?', $id);
+      $d->do_('DELETE FROM git_groups WHERE id=?', $id);
+    }
+  );
+  _bust($ctx);
+  return _render_list($ctx, $req,
+    notice => "group '$g->{name}' deleted; its repositories are now ungrouped.");
+}
+
+# Validate a group id against the table. Returns undef for "ungrouped"
+# and for an id that no longer exists.
+sub _norm_group_id {
+  my ($ctx, $v) = @_;
+  return undef unless defined $v && $v =~ /^(\d+)$/ && $1 > 0;
+  return $ctx->db->row('SELECT 1 FROM git_groups WHERE id=?', $1) ? $1 + 0 : undef;
+}
+
+sub _norm_pos {
+  my ($v) = @_;
+  return 0 unless defined $v && $v =~ /^(-?\d+)$/;
+  my $n = $1 + 0;
+  $n = -9999 if $n < -9999;
+  $n = 9999  if $n > 9999;
+  return $n;
 }
 
 sub _create {
@@ -94,10 +222,12 @@ sub _create {
   my $desc  = $req->{params}{description} // '';
   my $murl  = _trim($req->{params}{mirror_url});
   my $iv    = _norm_int($req->{params}{mirror_interval_s}, 3600);
+  my $gid   = _norm_group_id($ctx, $req->{params}{group_id});
 
   my @form = (
     slug => $slug, title => $title, owner => $owner,
     description => $desc, mirror_url => $murl, interval => $iv,
+    group_id => $gid,
   );
 
   return _render_list($ctx, $req, @form,
@@ -110,8 +240,7 @@ sub _create {
   if (defined $murl && length $murl
     && !Iczelia::Git::valid_mirror_url($murl))
   {
-    return _render_list($ctx, $req, @form,
-      error => 'mirror url must be http:// or https://');
+    return _render_list($ctx, $req, @form, error => MIRROR_URL_ERROR);
   }
 
   my $var = _var_dir($ctx);
@@ -133,7 +262,7 @@ sub _create {
     if (defined $murl && length $murl) {
       # Mirror mode: defer clone to warmer. Just stamp the DB row.
       $id = _insert_repo(
-        $ctx->db, $slug, $title, $owner, $desc, $murl, $iv, $now
+        $ctx->db, $slug, $title, $owner, $desc, $murl, $iv, $now, undef, $gid
       );
       1;
     }
@@ -156,7 +285,7 @@ sub _create {
       }
       my $head = eval { Iczelia::Git::head_sha(Iczelia::Git::open_bare($path)) };
       $id = _insert_repo(
-        $ctx->db, $slug, $title, $owner, $desc, undef, $iv, $now, $head
+        $ctx->db, $slug, $title, $owner, $desc, undef, $iv, $now, $head, $gid
       );
       1;
     }
@@ -172,14 +301,14 @@ sub _create {
 }
 
 sub _insert_repo {
-  my ($db, $slug, $title, $owner, $desc, $murl, $iv, $now, $head) = @_;
+  my ($db, $slug, $title, $owner, $desc, $murl, $iv, $now, $head, $gid) = @_;
   $db->do_(
     q{INSERT INTO git_repos
         (slug, title, owner, description, mirror_url, mirror_interval_s,
-         head_sha, created_at, updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?)},
+         head_sha, group_id, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?)},
     $slug, $title // '', $owner // '', $desc // '',
-    $murl, $iv, $head, $now, $now
+    $murl, $iv, $head, $gid, $now, $now
   );
   return $db->last_id;
 }
@@ -201,6 +330,7 @@ sub _render_edit {
     $ctx, $req, 'admin_git_edit.tpl',
     title => "git: $row->{slug}",
     repo  => $row,
+    group_options => _group_options(_groups($ctx->db), $row->{group_id}),
     git_available => (Iczelia::Git::available() ? 1 : 0),
     error  => $opt{error},
     notice => $opt{notice},
@@ -226,16 +356,53 @@ sub _meta {
   my $owner = $req->{params}{owner}          // '';
   my $desc  = $req->{params}{description}    // '';
   my $br    = _trim($req->{params}{default_branch}) // 'main';
+  my $gid   = _norm_group_id($ctx, $req->{params}{group_id});
   return _render_edit($ctx, $req, error => 'branch name looks bogus')
     unless $br =~ /^[A-Za-z0-9._\/-]+\z/;
 
+  my $old  = $row->{slug};
+  my $slug = _norm_slug($req->{params}{slug});
+  $slug = $old unless length $slug;
+  if ($slug ne $old) {
+    return _render_edit($ctx, $req,
+      error => 'invalid slug: use a-z, 0-9 and dashes, avoid reserved names')
+      unless Iczelia::Subpages::valid_slug($slug);
+    return _render_edit($ctx, $req,
+      error => "the slug '$slug' is already in use")
+      if _slug_taken($ctx, $slug, $id);
+    if (my $rerr = _rename_bare($ctx, $old, $slug)) {
+      return _render_edit($ctx, $req, error => $rerr);
+    }
+  }
+
   $ctx->db->do_(
-    q{UPDATE git_repos SET title=?, owner=?, description=?,
-        default_branch=?, updated_at=? WHERE id=?},
-    $title, $owner, $desc, $br, time, $id
+    q{UPDATE git_repos SET slug=?, title=?, owner=?, description=?,
+        default_branch=?, group_id=?, updated_at=? WHERE id=?},
+    $slug, $title, $owner, $desc, $br, $gid, time, $id
   );
-  _bust($ctx, $row->{slug});
-  return _render_edit($ctx, $req, notice => 'saved.');
+  _bust($ctx, $slug);
+  _bust($ctx, $old) if $slug ne $old;
+  return _render_edit($ctx, $req,
+    notice => $slug eq $old
+      ? 'saved.'
+      : "saved; repository moved to /git/$slug/ (links to /git/$old/ now 404).");
+}
+
+# Move the on-disk bare repo to match a new slug. Returns an error
+# string, or undef on success and when there is nothing to move (a
+# mirror whose first clone has not run). The caller's DB write runs
+# only after this succeeds.
+sub _rename_bare {
+  my ($ctx, $old, $new) = @_;
+  my $var = _var_dir($ctx);
+  my ($from, $to) =
+    map { eval {Iczelia::Git::bare_repo_path($var, $_)} } $old, $new;
+  return "bad slug path: $@" unless defined $from && defined $to;
+  return undef unless -e $from;
+  return "a bare repo already exists at $to" if -e $to;
+  rename($from, $to) or return "rename: $!";
+  unlink "$var/git/$old.lock";
+  return undef;
 }
 
 sub _mirror {
@@ -251,8 +418,7 @@ sub _mirror {
   if (defined $murl && length $murl
     && !Iczelia::Git::valid_mirror_url($murl))
   {
-    return _render_edit($ctx, $req,
-      error => 'mirror url must be http:// or https://');
+    return _render_edit($ctx, $req, error => MIRROR_URL_ERROR);
   }
   $murl = undef unless defined $murl && length $murl;
   $ctx->db->do_(
@@ -287,13 +453,15 @@ sub _pull_now {
     return _render_edit($ctx, $req, error => 'another pull is in progress');
   }
 
+  my $ssh = Iczelia::Git::Mirrors::ssh_opts($ctx->cfg, $var);
   my ($ok, $perr, $new_head);
   if (-d "$path/objects") {
-    ($ok, $perr, $new_head) = Iczelia::Git::pull_mirror($path);
+    ($ok, $perr, $new_head) = Iczelia::Git::pull_mirror($path, ssh => $ssh);
   }
   else {
-    ($ok, $perr, $new_head) =
-      eval { Iczelia::Git::clone_mirror($path, $row->{mirror_url}) };
+    ($ok, $perr, $new_head) = eval {
+      Iczelia::Git::clone_mirror($path, $row->{mirror_url}, ssh => $ssh);
+    };
     $perr = $@ unless defined $ok;
   }
   flock($lock, LOCK_UN);

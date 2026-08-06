@@ -177,6 +177,15 @@ CREATE INDEX IF NOT EXISTS subpage_files_listing
   ON subpage_files(subpage_id, path, size, updated_at,
                    content_type, is_binary);
 
+-- Named sections on /git/. position orders them; ties break on name.
+CREATE TABLE IF NOT EXISTS git_groups (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT    NOT NULL UNIQUE,
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS git_repos (
   id                INTEGER PRIMARY KEY,
   slug              TEXT    NOT NULL UNIQUE,
@@ -184,6 +193,7 @@ CREATE TABLE IF NOT EXISTS git_repos (
   owner             TEXT    NOT NULL DEFAULT '',
   description       TEXT    NOT NULL DEFAULT '',
   default_branch    TEXT    NOT NULL DEFAULT 'main',
+  group_id          INTEGER REFERENCES git_groups(id) ON DELETE SET NULL,
   mirror_url        TEXT,
   mirror_interval_s INTEGER NOT NULL DEFAULT 3600,
   last_pulled_at    INTEGER,
@@ -195,6 +205,7 @@ CREATE TABLE IF NOT EXISTS git_repos (
 );
 CREATE INDEX IF NOT EXISTS git_repos_mirror_due
   ON git_repos(last_pulled_at) WHERE mirror_url IS NOT NULL;
+CREATE INDEX IF NOT EXISTS git_repos_group ON git_repos(group_id, slug);
 
 -- Per-HEAD cache of "newest commit that modified <dir>/<name>". Keyed
 -- on head_sha so a mirror pull (which deletes stale-sha rows) drops the

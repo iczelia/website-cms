@@ -190,10 +190,15 @@ sub _index {
   my ($ctx, $req) = @_;
   return _route($ctx, $req, sub {
     my ($tab) = @_;
+    # Ungrouped repos sort last: COALESCE pushes them past every real
+    # position, and the NULL group name sorts after any string.
     my $rows = $ctx->db->all(
-      q{SELECT slug, title, owner, description,
-                  last_pulled_at, head_sha, updated_at
-            FROM git_repos ORDER BY slug}
+      q{SELECT r.slug, r.title, r.owner, r.description,
+                  r.last_pulled_at, r.head_sha, r.updated_at,
+                  g.name AS group_name, g.position AS group_position
+            FROM git_repos r LEFT JOIN git_groups g ON g.id = r.group_id
+           ORDER BY (g.id IS NULL), COALESCE(g.position, 0),
+                    COALESCE(g.name, ''), r.slug}
     );
     my @body;
     push @body, '<section class="ab-section">';
@@ -202,32 +207,56 @@ sub _index {
       push @body, '<p class="empty">no repositories.</p>';
     }
     else {
-      push @body,
-        '<table class="git-listing"><thead><tr>'
-      . '<th>name</th><th>owner</th><th>description</th>'
-      . '<th class="mtime">last update</th></tr></thead><tbody>';
-      for my $r (@$rows) {
-        my $when = _fmt_git_time(
-          $r->{last_pulled_at} || $r->{updated_at}
-        );
-        my $title = length($r->{title}) ? $r->{title} : $r->{slug};
-        push @body, sprintf(
-          '<tr><td><a href="/git/%s/">%s</a></td>'
-          . '<td>%s</td><td>%s</td><td class="mtime">%s</td></tr>',
-          escape_url($r->{slug}),
-          escape_html($title),
-          escape_html(length $r->{owner} ? $r->{owner} : '-'),
-          escape_html($r->{description} // ''),
-          $when,
-        );
-      }
-      push @body, '</tbody></table>';
+      push @body, _index_group($_) for @{_group_rows($rows)};
     }
     push @body, '</section>';
     push @body, _tab_prefs($tab);
     return _render($ctx, 'iczelia :: git', join("\n", @body), $tab,
       repo_slug => undef);
   });
+}
+
+# Consecutive runs of the already-ordered index rows, one per group.
+# Ungrouped rows form a run with no name and render headingless, so a
+# site with no groups sees the same single table as before.
+sub _group_rows {
+  my ($rows) = @_;
+  my @out;
+  for my $r (@$rows) {
+    my $name = $r->{group_name};
+    push @out, {name => $name, rows => []}
+      if !@out
+      || (defined $name xor defined $out[-1]{name})
+      || (defined $name && $name ne $out[-1]{name});
+    push @{$out[-1]{rows}}, $r;
+  }
+  return \@out;
+}
+
+sub _index_group {
+  my ($group) = @_;
+  my @out;
+  push @out, '<h2 class="git-group">' . escape_html($group->{name}) . '</h2>'
+    if defined $group->{name};
+  push @out,
+      '<table class="git-listing git-index"><thead><tr>'
+    . '<th class="name">name</th><th class="owner">owner</th>'
+    . '<th class="desc">description</th>'
+    . '<th class="mtime">last update</th></tr></thead><tbody>';
+  for my $r (@{$group->{rows}}) {
+    push @out, sprintf(
+      '<tr><td class="name"><a href="/git/%s/">%s</a></td>'
+      . '<td class="owner">%s</td><td class="desc">%s</td>'
+      . '<td class="mtime">%s</td></tr>',
+      escape_url($r->{slug}),
+      escape_html(length $r->{title} ? $r->{title} : $r->{slug}),
+      escape_html(length $r->{owner} ? $r->{owner} : '-'),
+      escape_html($r->{description} // ''),
+      _fmt_git_time($r->{last_pulled_at} || $r->{updated_at}),
+    );
+  }
+  push @out, '</tbody></table>';
+  return join "\n", @out;
 }
 
 sub _summary {

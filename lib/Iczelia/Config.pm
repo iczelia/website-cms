@@ -38,6 +38,9 @@ use Iczelia::Util qw(detect_cores);
 #   update-remote     git remote bin/iczelia-update fetches ('' = no fetch)
 #   update-tag-prefix tag prefix selecting release tags (default: 'v')
 #   update-restart-cmd  shell command run after a successful self-update
+#   git-ssh-key       private key for ssh git mirrors ('' = ssh default)
+#   git-ssh-known-hosts  known_hosts for those mirrors (default var/git/known_hosts)
+#   git-ssh-strict    StrictHostKeyChecking: accept-new (default) | yes | no
 
 my %DEFAULTS = (
   'listen-tcp'         => '127.0.0.1:8731',
@@ -54,6 +57,9 @@ my %DEFAULTS = (
   'update-remote'      => 'origin',
   'update-tag-prefix'  => 'v',
   'update-restart-cmd' => '',
+  'git-ssh-key'          => '',
+  'git-ssh-known-hosts'  => '',
+  'git-ssh-strict'       => 'accept-new',
 );
 
 sub load {

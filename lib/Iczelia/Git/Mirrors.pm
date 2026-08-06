@@ -29,12 +29,29 @@ use Iczelia::Cache ();
 # /git/<slug>/ response-cache prefix and the global /git/ index page,
 # and drops stale per-HEAD rows from git_commit_cache.
 
+# ssh options for clone_mirror / pull_mirror, from config. known_hosts
+# defaults into var/git/ so an accept-new first contact survives a
+# restart.
+sub ssh_opts {
+  my ($cfg, $var_dir) = @_;
+  $cfg ||= {};
+  my $known = $cfg->{'git-ssh-known-hosts'};
+  $known = "$var_dir/git/known_hosts"
+    if (!defined $known || !length $known) && defined $var_dir;
+  return {
+    key         => $cfg->{'git-ssh-key'},
+    known_hosts => $known,
+    strict      => $cfg->{'git-ssh-strict'},
+  };
+}
+
 sub pump {
   my (%arg) = @_;
   my $db      = $arg{db}      or die "db required";
   my $var_dir = $arg{var_dir} or die "var_dir required";
   my $on_log  = $arg{on_log}  || sub { warn "[git mirrors] $_[0]\n" };
   my $max     = $arg{max_jobs} // 4;
+  my $ssh     = $arg{ssh} || ssh_opts($arg{cfg}, $var_dir);
 
   return 0 unless Iczelia::Git::available();
 
@@ -79,11 +96,12 @@ sub pump {
 
     my ($ok, $err, $new_head);
     if (-d "$path/objects") {
-      ($ok, $err, $new_head) = Iczelia::Git::pull_mirror($path);
+      ($ok, $err, $new_head) = Iczelia::Git::pull_mirror($path, ssh => $ssh);
     }
     else {
-      ($ok, $err, $new_head) =
-        eval { Iczelia::Git::clone_mirror($path, $row->{mirror_url}) };
+      ($ok, $err, $new_head) = eval {
+        Iczelia::Git::clone_mirror($path, $row->{mirror_url}, ssh => $ssh);
+      };
       $err = $@ unless defined $ok;
     }
 

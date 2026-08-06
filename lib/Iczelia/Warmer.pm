@@ -163,6 +163,7 @@ sub _pass {
       Iczelia::Git::Mirrors::pump(
         db       => $db,
         var_dir  => _var_dir($self->{cfg}),
+        cfg      => $self->{cfg},
         on_log   => sub { $self->_log($_[0]) },
         max_jobs => 4,
       );

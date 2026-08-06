@@ -161,6 +161,35 @@ my @MIGRATIONS = (
         unless _has_column($db, 'response_cache', 'vary');
     },
   },
+
+  # 0.1.6 -> 0.1.7
+  {
+    version => '0.1.6 -> 0.1.7',
+    name    => 'git_groups table + git_repos.group_id',
+    check   => sub {_table_exists($_[0], 'git_groups')},
+    apply   => sub {
+      my ($db) = @_;
+      $db->dbh->do(
+        q{CREATE TABLE IF NOT EXISTS git_groups (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT    NOT NULL UNIQUE,
+            position   INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )}
+      );
+
+      # git_repos predates git_groups on an upgraded DB, so the column
+      # is added without the REFERENCES clause SQLite can only express
+      # at CREATE time. ON DELETE SET NULL is enforced in _group_delete.
+      $db->dbh->do('ALTER TABLE git_repos ADD COLUMN group_id INTEGER')
+        unless _has_column($db, 'git_repos', 'group_id');
+      $db->dbh->do(
+        'CREATE INDEX IF NOT EXISTS git_repos_group'
+        . ' ON git_repos(group_id, slug)'
+      );
+    },
+  },
 );
 
 sub run {

@@ -20,6 +20,11 @@
     <form class="cms-form" method="POST" action="/admin/git/{{ repo.id }}/meta">
       <input type="hidden" name="csrf" value="{{ csrf.meta }}">
       <fieldset class="cms-field cms-field-text">
+        <legend>slug</legend>
+        <input type="text" name="slug" value="{{ repo.slug }}" required pattern="[a-z0-9][a-z0-9-]*" maxlength="63">
+        <p class="cms-help"><strong>changing this moves the repository.</strong> the on-disk bare clone is renamed and every existing link to <code>/git/{{ repo.slug }}/</code> starts returning 404. no redirect is left behind.</p>
+      </fieldset>
+      <fieldset class="cms-field cms-field-text">
         <legend>title</legend>
         <input type="text" name="title" value="{{ repo.title }}" maxlength="200">
       </fieldset>
@@ -30,6 +35,12 @@
       <fieldset class="cms-field cms-field-text">
         <legend>description</legend>
         <input type="text" name="description" value="{{ repo.description }}" maxlength="500">
+      </fieldset>
+      <fieldset class="cms-field cms-field-text">
+        <legend>group</legend>
+        <select name="group_id">
+{% for o in group_options %}          <option value="{{ o.id }}"{% if o.selected %} selected{% endif %}>{{ o.name }}</option>
+{% endfor %}        </select>
       </fieldset>
       <fieldset class="cms-field cms-field-text">
         <legend>default branch</legend>
@@ -48,7 +59,7 @@
       <fieldset class="cms-field cms-field-text">
         <legend>mirror url</legend>
         <input type="text" name="mirror_url" value="{{ repo.mirror_url }}" maxlength="500" placeholder="https://github.com/user/repo.git">
-        <p class="cms-help">empty means no mirroring. http(s) only in v1.</p>
+        <p class="cms-help">empty means no mirroring. http(s), <code>ssh://user@host/path</code> or <code>user@host:path</code>. ssh uses <code>git-ssh-key</code> from the daemon config with <code>BatchMode=yes</code>, so a key that needs a passphrase fails instead of hanging.</p>
       </fieldset>
       <fieldset class="cms-field cms-field-text">
         <legend>interval (seconds)</legend>

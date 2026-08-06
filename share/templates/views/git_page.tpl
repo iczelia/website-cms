@@ -35,6 +35,20 @@ td.size, td.mtime, th.size, th.mtime {
 .git-tree td.icon img { width: 22px; height: 22px; vertical-align: middle; }
 .git-age { font-family: 'LM Mono', monospace; letter-spacing: 0; }
 
+/* Repository index. table-layout: fixed pins the columns to these
+   widths; under the default auto layout one long description takes
+   the space it wants and squeezes name and owner down to a character
+   or two per line. */
+table.git-index { table-layout: fixed; }
+.git-index th.name,  .git-index td.name  { width: 22%; }
+.git-index th.owner, .git-index td.owner { width: 16%; }
+.git-index th.mtime, .git-index td.mtime { width: 8em; }
+.git-index td.desc { color: #b9c8d6; }
+h2.git-group {
+  font-size: 15px; margin: 18px 0 6px; padding-bottom: 3px;
+  color: #b9c8d6; border-bottom: 1px solid rgba(110,145,180,0.35); }
+h2.git-group:first-child { margin-top: 0; }
+
 /* Branches / tags: table markup, laid out as floated fixed-width cells
    so IE9 / FF3.5 / Chrome 4 can still fit as many columns as the
    available width allows. */

@@ -32,6 +32,7 @@ use Iczelia::PublicListing;
 use Iczelia::Git;
 use Iczelia::Git::Mirrors;
 use Iczelia::Handlers::Git;
+use Iczelia::Handlers::Admin;
 use Iczelia::Handlers::Admin::Git;
 use Iczelia::CachePolicy qw(bypass_for_request);
 
@@ -48,10 +49,41 @@ ok(Iczelia::Git::valid_mirror_url('http://example.org/repo'),
   'http mirror url accepted');
 ok(!Iczelia::Git::valid_mirror_url('file:///etc/passwd'),
   'file:// rejected');
-ok(!Iczelia::Git::valid_mirror_url('ssh://git@host/repo.git'),
-  'ssh:// rejected');
+ok(Iczelia::Git::valid_mirror_url('ssh://git@host/repo.git'),
+  'ssh:// accepted');
+ok(Iczelia::Git::valid_mirror_url('ssh://git@host:2222/srv/repo.git'),
+  'ssh:// with port accepted');
+ok(Iczelia::Git::valid_mirror_url('git@github.com:user/repo.git'),
+  'scp-style remote accepted');
 ok(!Iczelia::Git::valid_mirror_url('git://github.com/foo/bar.git'),
   'git:// rejected');
+
+# ext:: is shaped like a scp-style remote and hands git a command line
+# to run, so it must not survive the ssh relaxation.
+ok(!Iczelia::Git::valid_mirror_url('ext::sh -c id'), 'ext:: rejected');
+ok(!Iczelia::Git::valid_mirror_url('ext::id'),  'ext:: without space rejected');
+ok(!Iczelia::Git::valid_mirror_url('transport::addr'),
+  'remote-helper syntax rejected');
+ok(!Iczelia::Git::valid_mirror_url('-oProxyCommand=id'),
+  'leading dash rejected (would be an ssh option)');
+ok(!Iczelia::Git::valid_mirror_url('git@host:-oProxyCommand=id'),
+  'dash-leading scp path rejected');
+ok(!Iczelia::Git::valid_mirror_url('./local:path'),
+  'local path with a colon is not a remote');
+ok(!Iczelia::Git::valid_mirror_url('host:/abs/path'),
+  'slash after the colon is not scp-style');
+
+# GIT_SSH_COMMAND goes through /bin/sh, so every word is quoted, and
+# BatchMode keeps a passphrase prompt from hanging the warmer.
+my $sshcmd = Iczelia::Git::ssh_command(
+  key => "/var/k ey", known_hosts => '/var/kh', strict => 'accept-new');
+like($sshcmd, qr/'BatchMode=yes'/,  'ssh command sets BatchMode');
+like($sshcmd, qr/'StrictHostKeyChecking=accept-new'/, 'strict host checking');
+like($sshcmd, qr{'-i' '/var/k ey'}, 'key path quoted as one word');
+like($sshcmd, qr/'IdentitiesOnly=yes'/, 'agent identities not offered');
+unlike(Iczelia::Git::ssh_command(), qr/-i/, 'no -i without a key');
+ok(!eval { Iczelia::Git::ssh_command(strict => 'no; id'); 1 },
+  'bogus StrictHostKeyChecking value dies');
 ok(!Iczelia::Git::valid_mirror_url(''),         'empty url rejected');
 ok(!Iczelia::Git::valid_mirror_url(undef),      'undef url rejected');
 ok(!Iczelia::Git::valid_mirror_url("https://x\nLocation: y"),
@@ -302,6 +334,149 @@ is($n, 0, 'mirror pump: nothing due, zero processed');
   ok(!eval { Iczelia::Git::bare_repo_path("$tmp", '-leading-dash'); 1 },
     'bare_repo_path rejects leading dash');
 }
+
+# -- 3b. Groups + slug rename -------------------------------------------------
+
+{
+  package FakeAuth;
+  sub new { bless {}, shift }
+  sub csrf_token   { "tok:$_[2]" }
+  sub require_csrf { undef }
+  sub route_gate   { sub { $_[0] } }
+}
+$ctx->{auth} = FakeAuth->new;
+sub FakeCtx::auth { $_[0]{auth} }
+
+sub areq {
+  my (%a) = @_;
+  return {
+    method => 'POST', path => '/admin/git/', auth_sid => 'sid',
+    caps => $a{caps} || {}, params => $a{params} || {},
+    qparams => {}, uploads => [], cookies => {},
+  };
+}
+
+Iczelia::Handlers::Admin::Git::_group_create($ctx,
+  areq(params => {name => 'tools', position => 1}));
+Iczelia::Handlers::Admin::Git::_group_create($ctx,
+  areq(params => {name => 'archive', position => 5}));
+my $gid = $db->one("SELECT id FROM git_groups WHERE name='tools'");
+ok($gid, 'group created');
+
+# Duplicate names are rejected rather than silently splitting a section.
+Iczelia::Handlers::Admin::Git::_group_create($ctx,
+  areq(params => {name => 'tools'}));
+is($db->one("SELECT COUNT(*) FROM git_groups WHERE name='tools'"), 1,
+  'duplicate group name rejected');
+
+$db->do_('UPDATE git_repos SET group_id=? WHERE slug=?', $gid, 'empty');
+
+# position orders the sections: tools(1) before archive(5), and the
+# ungrouped repo lands after both.
+my $agid = $db->one("SELECT id FROM git_groups WHERE name='archive'");
+$db->do_(
+  q{INSERT INTO git_repos(slug,title,owner,description,group_id,
+       mirror_interval_s,created_at,updated_at)
+       VALUES('old','Old Repo','k','archived',?,3600,1,1)}, $agid);
+
+my $gidx = Iczelia::Handlers::Git::_index($ctx,
+  {method => 'GET', path => '/git/'});
+is($gidx->{status}, 200, 'grouped index renders');
+like($gidx->{body}, qr{<h2 class="git-group">tools</h2>}, 'group heading shown');
+like($gidx->{body}, qr{<h2 class="git-group">archive</h2>}, 'second heading');
+my $p_tools   = index($gidx->{body}, '>tools<');
+my $p_archive = index($gidx->{body}, '>archive<');
+my $p_mirror  = index($gidx->{body}, 'Mirror Repo');
+ok($p_tools > 0 && $p_archive > $p_tools,
+  'groups ordered by position, not name');
+ok($p_mirror > $p_archive, 'ungrouped repositories are listed last');
+
+# One table per group, so a long description in one section cannot
+# reflow the columns of another.
+my $tables = () = $gidx->{body} =~ /<table class="git-listing git-index"/g;
+is($tables, 3, 'one table per group plus one for the ungrouped repos');
+like($gidx->{body}, qr{<th class="desc">description</th>},
+  'index columns are classed for the fixed layout');
+
+# Deleting a group detaches its repos instead of deleting them.
+Iczelia::Handlers::Admin::Git::_group_delete($ctx,
+  areq(caps => {id => $agid}));
+is($db->one("SELECT COUNT(*) FROM git_groups WHERE id=?", $agid), 0,
+  'group deleted');
+is($db->one("SELECT COUNT(*) FROM git_repos WHERE slug='old'"), 1,
+  'its repository survives');
+is($db->one("SELECT group_id FROM git_repos WHERE slug='old'"), undef,
+  'and is now ungrouped');
+
+# With every repo ungrouped the index drops back to a single unlabelled
+# table, so a site that never names a group sees no change.
+$db->do_('UPDATE git_repos SET group_id=NULL');
+my $flat = Iczelia::Handlers::Git::_index($ctx,
+  {method => 'GET', path => '/git/'});
+unlike($flat->{body}, qr{<h2 class="git-group">},
+  'no headings when nothing is grouped');
+
+# One named group is still a named group: it keeps its heading.
+$db->do_('UPDATE git_repos SET group_id=?', $gid);
+like(
+  Iczelia::Handlers::Git::_index($ctx, {method => 'GET', path => '/git/'})
+    ->{body},
+  qr{<h2 class="git-group">tools</h2>},
+  'a single named group keeps its heading'
+);
+$db->do_('UPDATE git_repos SET group_id=NULL');
+$db->do_('UPDATE git_repos SET group_id=? WHERE slug=?', $gid, 'empty');
+
+# Slug rename moves the on-disk bare repo and busts both prefixes.
+my $rid = $db->one("SELECT id FROM git_repos WHERE slug='empty'");
+File::Path::make_path("$tmp/git/empty.git/objects");
+$ctx->{cache} = FakeCache->new;
+my $ren = Iczelia::Handlers::Admin::Git::_meta($ctx, areq(
+  caps   => {id => $rid},
+  params => {slug => 'renamed', title => 'Empty Repo', owner => 'k',
+             description => 'd', default_branch => 'main',
+             group_id => $gid},
+));
+is($db->one('SELECT slug FROM git_repos WHERE id=?', $rid), 'renamed',
+  'slug updated');
+ok(-d "$tmp/git/renamed.git/objects", 'bare repo moved to the new slug');
+ok(!-e "$tmp/git/empty.git", 'old bare repo path is gone');
+is($db->one('SELECT group_id FROM git_repos WHERE id=?', $rid), $gid,
+  'group survives the rename');
+like($ren->{body}, qr/links to .git.empty. now 404/,
+  'rename warns that the old links break');
+is_deeply([sort @{$ctx->{cache}{prefixes}}],
+  ['/git/empty/', '/git/renamed/'],
+  'both the old and the new prefix are busted');
+
+# A rename onto a taken slug leaves everything where it was.
+$db->do_(
+  q{INSERT INTO git_repos(slug,mirror_interval_s,created_at,updated_at)
+      VALUES('taken',3600,1,1)});
+my $clash = Iczelia::Handlers::Admin::Git::_meta($ctx, areq(
+  caps   => {id => $rid},
+  params => {slug => 'taken', default_branch => 'main'},
+));
+is($db->one('SELECT slug FROM git_repos WHERE id=?', $rid), 'renamed',
+  'rename onto a taken slug is refused');
+like($clash->{body}, qr/already in use/, 'and says why');
+ok(-d "$tmp/git/renamed.git/objects", 'the bare repo did not move');
+
+# A reserved slug is refused for the same reason it is at create time.
+Iczelia::Handlers::Admin::Git::_meta($ctx, areq(
+  caps   => {id => $rid},
+  params => {slug => 'admin', default_branch => 'main'},
+));
+is($db->one('SELECT slug FROM git_repos WHERE id=?', $rid), 'renamed',
+  'reserved slug refused');
+
+# ssh_opts defaults known_hosts into var/git/ so accept-new sticks.
+my $so = Iczelia::Git::Mirrors::ssh_opts({}, '/var/x');
+is($so->{known_hosts}, '/var/x/git/known_hosts',
+  'known_hosts defaults under var/git/');
+is(Iczelia::Git::Mirrors::ssh_opts(
+  {'git-ssh-known-hosts' => '/etc/kh'}, '/var/x')->{known_hosts}, '/etc/kh',
+  'config overrides the known_hosts path');
 
 # -- 4. Integration block: needs Git::Raw + libgit2 ---------------------------
 
