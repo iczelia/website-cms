@@ -133,8 +133,8 @@ sub get {
   my $vary = $head->{vary};
   $vary = 'Accept-Encoding' unless defined $vary && length $vary;
 
-  # 304 so clients keep their cached body. The freshness headers ride
-  # along, else the client stops revalidating.
+  # 304 so clients keep their cached body. Cache-Control and Vary must
+  # be repeated or the client stops revalidating.
   my $inm = $req && $req->{headers}{'if-none-match'};
   if (defined $inm && length $inm) {
     for my $tag (split /\s*,\s*/, $inm) {

@@ -31,8 +31,8 @@ use constant {
   MAX_FILE  => 8 * 1024 * 1024,
   MAX_TOTAL => 32 * 1024 * 1024,
 
-  # Most a listing will read from one file. Past it, language detection
-  # falls back to the name and an outsized README goes unrendered.
+  # Cap on a single blob read during a listing. Past it, language
+  # detection uses the name only and a README is not rendered.
   SNIFF_MAX_SIZE => 1024 * 1024,
 };
 
@@ -214,8 +214,8 @@ sub icon_for {
   return $EXT_ICON{$ext} || 'file.png';
 }
 
-# icon_for_entry's name/content-type half. undef when the choice needs
-# {lang}. _attach_langs keys its sniff off this so the two can't drift.
+# icon_for_entry's name/content-type half; undef when the choice needs
+# {lang}. _attach_langs keys its sniff off this.
 sub icon_from_type {
   my ($name, %meta) = @_;
   return 'folder.png' if ($meta{type} // '') eq 'dir';
@@ -737,7 +737,8 @@ sub directory_entries {
   return \@out;
 }
 
-# Set {lang} on each listed file from the first 8 KB of its content.
+# Set {lang} from the first 8 KB of content, for files whose icon needs
+# it. SUBSTR over a BLOB materialises the whole value.
 sub _attach_langs {
   my ($db, $id, $files) = @_;
 

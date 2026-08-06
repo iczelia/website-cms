@@ -48,7 +48,7 @@ sub f {
 }
 
 # 1. SUBSTR over a BLOB materialises the whole value, so a sniff costs
-# the full file. Media settles from the content type and must not be read.
+# the full file. Media resolves from the content type and is not read.
 
 my $big = 'x' x 200_000;
 my $id  = Iczelia::Subpages::create($db, 'bundle', 'B', [
@@ -138,7 +138,7 @@ is($hit->{headers}{'Cache-Control'},
   'hit replays the handler Cache-Control');
 like($hit->{headers}{Vary}, qr/\bCookie\b/, 'hit replays Vary: Cookie');
 
-# must-revalidate is only honest if the conditional GET works.
+# must-revalidate requires the conditional GET to work.
 my $etag = $hit->{headers}{ETag};
 $etag =~ s/"//g;
 my $not_mod = $cache->get('/bundle/', {headers => {'if-none-match' => $etag}});
@@ -178,7 +178,7 @@ $cache->put('/renamed/a.css',
 $render->invalidate_subpage('renamed', 'bundle');
 is_deeply(cached(), ['/blog/'], 'rename drops both the old and the new prefix');
 
-# A slug that prefixes another must not take its neighbour down.
+# A slug that prefixes another must not bust its neighbour.
 $cache->put('/bundle/a.css',
   {status => 200, headers => {'Content-Type' => 'text/css'}, body => 'a{}' x 200});
 $cache->put('/bundle2/a.css',
@@ -187,7 +187,7 @@ $render->invalidate_subpage('bundle');
 is_deeply(cached(), ['/blog/', '/bundle2/a.css'],
   'busting /bundle/ leaves /bundle2/ intact');
 
-# 5. Bodies the cache would not earn its keep on opt out.
+# 5. Bodies not worth a second copy opt out.
 
 sub cacheable {
   my ($ct, $body) = @_;
@@ -207,7 +207,7 @@ is($fat->{headers}{'Cache-Control'}, 'no-cache',
   'and says so in the header, so put() refuses it too');
 ok(!$cache->put('/bundle/big.bin', $fat), 'put() honours the opt-out');
 
-# The size cap alone misses media: a photo bundle is all small files.
+# The size cap alone misses media; a photo bundle is all small files.
 for my $ct ('image/png', 'audio/flac', 'video/mp4', 'application/pdf',
   'font/woff2', 'application/zip')
 {
@@ -216,7 +216,7 @@ for my $ct ('image/png', 'audio/flac', 'video/mp4', 'application/pdf',
 ok(!cacheable('text/css; charset=utf-8', 'x' x 4096)->{_no_cache},
   'but bundle CSS, where minify and brotli are the real cost, is cached');
 
-# 6. The README is the one blob a listing reads whole, so it is capped.
+# 6. The README is the one blob a listing reads whole; it is capped.
 
 {
   package ListCtx;

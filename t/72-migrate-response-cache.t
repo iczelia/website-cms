@@ -14,9 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# cache_control/vary hold what the handler served the miss with. They
-# are nullable on purpose: rows from the previous build keep serving
-# under the path-derived policy, so an upgrade never drops the cache.
+# cache_control/vary hold what the handler served the miss with, and
+# are nullable: rows from the previous build keep serving under the
+# path-derived policy, so an upgrade never drops the cache.
 
 use strict;
 use warnings;
@@ -46,7 +46,7 @@ sub has_col {
 ok(!has_col('cache_control'), 'cache_control absent before migrate');
 ok(!has_col('vary'),          'vary absent before migrate');
 
-# A row the previous build cached, with nowhere to record policy.
+# A row the previous build cached, with nowhere to record a policy.
 $db->do_(
   q{INSERT INTO response_cache(path,status,content_type,body,etag,created_at)
       VALUES('/blog/',200,'text/html; charset=utf-8','<p>old</p>','deadbeef',0)}
@@ -69,8 +69,8 @@ is($hit->{headers}{'Cache-Control'},
 is($hit->{headers}{Vary}, 'Accept-Encoding',
   'NULL vary falls back to the fixed stamp it was stored under');
 
-# The check keys on cache_control, so a crash between the two ALTERs
-# must not strand vary.
+# The check keys on cache_control; a crash between the two ALTERs must
+# not strand vary.
 my $partial = Iczelia::DB->connect("$tmp/partial.db");
 $partial->apply_schema_file("$FindBin::Bin/../share/schema.sql");
 $partial->dbh->do('ALTER TABLE response_cache DROP COLUMN cache_control');

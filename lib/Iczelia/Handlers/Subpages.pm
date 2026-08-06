@@ -30,14 +30,13 @@ use Iczelia::Util        qw(escape_html escape_url);
 # /<slug>/... when <slug> is a static subpage. Returns a response, or
 # undef so the next fallback can try.
 
-# Revalidation rather than a max-age window: an admin edit busts
-# /<slug>/ at any moment, so clients must never hold a copy blind.
+# max-age=0: an admin edit can bust /<slug>/ at any time, so clients
+# revalidate against the ETag instead of holding a copy.
 use constant CACHE_CONTROL  => 'public, max-age=0, must-revalidate';
 use constant CACHE_MAX_BODY => 2 * 1024 * 1024;
 
-# Caching buys the minify pass and the brotli; the blob read it also
-# saves is one indexed row. Media is stored uncompressed, so caching it
-# would double the db for that one row read.
+# Cache text only. Media is stored uncompressed and already reads back
+# as a single indexed row, so a second copy gains nothing.
 sub _cacheable {
   my ($resp) = @_;
   my $body = $resp->{body};
@@ -84,7 +83,7 @@ sub serve {
   # Prefer a precompressed .br/.gz sibling (brotli_static / gzip_static).
   # HTML is excluded so the daemon's minify pass never meets an encoded body.
   # Uncached: the cache holds one identity body per path, so a br hit
-  # would be replayed to a client that asked for gzip.
+  # would go to a client that asked for gzip.
   my $ct = Iczelia::Subpages::content_type_for($clean);
   if ($ct !~ m{^text/html\b}i) {
     my $ae = $req->{headers}{'accept-encoding'} // '';
@@ -149,7 +148,7 @@ sub _render_listing {
 
   my $entries = Iczelia::Subpages::directory_entries($ctx->db, $sp->{id}, $dir);
 
-  # The one blob a listing reads whole, so it gets the same cap.
+  # The one blob a listing reads whole; same cap.
   my $readme;
   for my $e (@$entries) {
     next if $e->{type} ne 'file';
