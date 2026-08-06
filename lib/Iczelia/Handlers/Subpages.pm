@@ -19,6 +19,7 @@ use strict;
 use warnings;
 use Encode               ();
 use Iczelia              ();
+use Iczelia::Compress    ();
 use Iczelia::HTTP        ();
 use Iczelia::Subpages    ();
 use Iczelia::Theme       ();
@@ -28,6 +29,30 @@ use Iczelia::Util        qw(escape_html escape_url);
 # Server fallback (after the router and dynamic pages): claim
 # /<slug>/... when <slug> is a static subpage. Returns a response, or
 # undef so the next fallback can try.
+
+# Revalidation rather than a max-age window: an admin edit busts
+# /<slug>/ at any moment, so clients must never hold a copy blind.
+use constant CACHE_CONTROL  => 'public, max-age=0, must-revalidate';
+use constant CACHE_MAX_BODY => 2 * 1024 * 1024;
+
+# Caching buys the minify pass and the brotli; the blob read it also
+# saves is one indexed row. Media is stored uncompressed, so caching it
+# would double the db for that one row read.
+sub _cacheable {
+  my ($resp) = @_;
+  my $body = $resp->{body};
+  my $ct   = $resp->{headers}{'Content-Type'} // '';
+  if ( !defined $body
+    || length($body) > CACHE_MAX_BODY
+    || Iczelia::Compress::is_binary_media_ct($ct))
+  {
+    $resp->{headers}{'Cache-Control'} = 'no-cache';
+    $resp->{_no_cache}                = 1;
+    return $resp;
+  }
+  $resp->{headers}{'Cache-Control'} = CACHE_CONTROL;
+  return $resp;
+}
 
 sub serve {
   my ($ctx, $req) = @_;
@@ -58,6 +83,8 @@ sub serve {
 
   # Prefer a precompressed .br/.gz sibling (brotli_static / gzip_static).
   # HTML is excluded so the daemon's minify pass never meets an encoded body.
+  # Uncached: the cache holds one identity body per path, so a br hit
+  # would be replayed to a client that asked for gzip.
   my $ct = Iczelia::Subpages::content_type_for($clean);
   if ($ct !~ m{^text/html\b}i) {
     my $ae = $req->{headers}{'accept-encoding'} // '';
@@ -94,15 +121,13 @@ sub serve {
 
   return Iczelia::HTTP::error(404) unless $file;
 
-  return {
-    status  => 200,
-    headers => {
-      'Content-Type'  => $file->{content_type},
-      'Cache-Control' => 'no-cache',
-    },
-    body      => $file->{content},
-    _no_cache => 1,
-  };
+  return _cacheable(
+    {
+      status  => 200,
+      headers => {'Content-Type' => $file->{content_type}},
+      body    => $file->{content},
+    }
+  );
 }
 
 sub _redirect {
@@ -124,10 +149,12 @@ sub _render_listing {
 
   my $entries = Iczelia::Subpages::directory_entries($ctx->db, $sp->{id}, $dir);
 
+  # The one blob a listing reads whole, so it gets the same cap.
   my $readme;
   for my $e (@$entries) {
     next if $e->{type} ne 'file';
     next unless Iczelia::Subpages::is_readme_name($e->{name});
+    last if ($e->{size} // 0) > Iczelia::Subpages::SNIFF_MAX_SIZE;
     my $row = Iczelia::Subpages::file($ctx->db, $sp->{id}, $e->{path});
     if ($row) {
       my $bytes   = $row->{content};
@@ -178,22 +205,22 @@ sub _render_listing {
     };
   }
 
-  return {
-    status  => 200,
-    headers => {
-      'Content-Type'  => 'text/html; charset=utf-8',
-      'Cache-Control' => 'no-cache',
-      'Vary'          => 'Cookie',
-    },
-    body => Iczelia::PublicListing::render_listing(
-      title  => "Index of $url_path",
-      rows   => \@rows,
-      readme => $readme,
-      footer => Iczelia::PublicListing::footer_for($ctx->db),
-      theme  => $theme,
-    ),
-    _no_cache => 1,
-  };
+  return _cacheable(
+    {
+      status  => 200,
+      headers => {
+        'Content-Type' => 'text/html; charset=utf-8',
+        'Vary'         => 'Cookie',
+      },
+      body => Iczelia::PublicListing::render_listing(
+        title  => "Index of $url_path",
+        rows   => \@rows,
+        readme => $readme,
+        footer => Iczelia::PublicListing::footer_for($ctx->db),
+        theme  => $theme,
+      ),
+    }
+  );
 }
 
 1;

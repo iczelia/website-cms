@@ -50,53 +50,6 @@ use warnings;
 #   Iczelia::Migrate::run($db);
 
 my @MIGRATIONS = (
-  # 0.1.3 -> 0.1.4: static subpages (uploaded HTML/CSS/JS bundles).
-  {
-    version => '0.1.3 -> 0.1.4',
-    name    => 'subpages + subpage_files tables',
-    check   => sub {_table_exists($_[0], 'subpages')},
-    apply   => sub {
-      my ($db) = @_;
-      $db->dbh->do(
-        q{CREATE TABLE IF NOT EXISTS subpages (
-            id         INTEGER PRIMARY KEY,
-            slug       TEXT    NOT NULL UNIQUE,
-            title      TEXT    NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-          )}
-      );
-      $db->dbh->do(
-        q{CREATE TABLE IF NOT EXISTS subpage_files (
-            id           INTEGER PRIMARY KEY,
-            subpage_id   INTEGER NOT NULL
-                         REFERENCES subpages(id) ON DELETE CASCADE,
-            path         TEXT    NOT NULL,
-            content      BLOB    NOT NULL,
-            content_type TEXT    NOT NULL,
-            size         INTEGER NOT NULL,
-            is_binary    INTEGER NOT NULL DEFAULT 0,
-            updated_at   INTEGER NOT NULL,
-            UNIQUE (subpage_id, path)
-          )}
-      );
-      $db->dbh->do('CREATE INDEX IF NOT EXISTS subpage_files_pid'
-        . ' ON subpage_files(subpage_id)');
-    },
-  },
-
-  # 0.1.4 -> 0.1.5: subpages.listing toggle for Apache-style indexes.
-  {
-    version => '0.1.4 -> 0.1.5',
-    name    => 'subpages.listing column',
-    check   => sub {_has_column($_[0], 'subpages', 'listing')},
-    apply   => sub {
-      $_[0]->dbh->do(
-        q{ALTER TABLE subpages
-            ADD COLUMN listing INTEGER NOT NULL DEFAULT 0});
-    },
-  },
-
   # 0.1.5 -> 0.1.6: resumable upload sessions for large admin uploads.
   {
     version => '0.1.5 -> 0.1.6',
@@ -181,6 +134,33 @@ my @MIGRATIONS = (
       );
     },
   },
+
+  # 0.1.5 -> 0.1.6
+  {
+    version => '0.1.5 -> 0.1.6',
+    name    => 'subpage_files listing covering index',
+    check   => sub {_index_exists($_[0], 'subpage_files_listing')},
+    apply   => sub {
+      $_[0]->dbh->do(
+        q{CREATE INDEX IF NOT EXISTS subpage_files_listing
+            ON subpage_files(subpage_id, path, size, updated_at,
+                             content_type, is_binary)}
+      );
+    },
+  },
+
+  # 0.1.6 -> 0.1.7
+  {
+    version => '0.1.6 -> 0.1.7',
+    name    => 'response_cache cache_control/vary columns',
+    check => sub {_has_column($_[0], 'response_cache', 'cache_control')},
+    apply => sub {
+      my ($db) = @_;
+      $db->dbh->do('ALTER TABLE response_cache ADD COLUMN cache_control TEXT');
+      $db->dbh->do('ALTER TABLE response_cache ADD COLUMN vary TEXT')
+        unless _has_column($db, 'response_cache', 'vary');
+    },
+  },
 );
 
 sub run {
@@ -223,6 +203,16 @@ sub _has_column {
   my $r = $db->one(
     q{SELECT 1 FROM pragma_table_info(?) WHERE name = ? LIMIT 1},
     $table, $column
+  );
+  return $r ? 1 : 0;
+}
+
+# True when the named index exists (sqlite_master entry).
+sub _index_exists {
+  my ($db, $index) = @_;
+  my $r = $db->one(
+    q{SELECT 1 FROM sqlite_master
+       WHERE type = 'index' AND name = ? LIMIT 1}, $index
   );
   return $r ? 1 : 0;
 }

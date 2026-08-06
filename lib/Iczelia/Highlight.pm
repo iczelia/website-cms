@@ -1656,6 +1656,10 @@ sub languages {
 sub highlight {
   my ($code, $lang) = @_;
   $code = '' unless defined $code;
+
+  # Normalise CRLF/CR to LF first.
+  $code =~ s/\r\n?/\n/g;
+
   my $key   = defined $lang && length $lang ? lc $lang : 'plain';
   my $canon = $ALIAS{$key};
   my $def;

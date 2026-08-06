@@ -160,6 +160,15 @@ my ($size2, $err2) = $u->append($id, $sid, 4, 'BBBB');
 is($err2, undef, 'second chunk appends');
 is($size2, 8,    'size after second chunk');
 
+# Losing an HTTP response after the bytes reach disk must be safe to retry.
+# The endpoint returns the already-committed size instead of duplicating the
+# bytes; a conflicting replay is still rejected.
+my ($replay_size, $replay_err) = $u->append($id, $sid, 4, 'BBBB');
+is($replay_err,  undef, 'identical chunk replay is accepted');
+is($replay_size, 8,     'identical replay does not grow the upload');
+my (undef, $replay_bad) = $u->append($id, $sid, 4, 'XXXX');
+like($replay_bad, qr/offset/i, 'conflicting chunk replay is rejected');
+
 # Offset mismatch (gap or duplicate).
 my (undef, $gap_err) = $u->append($id, $sid, 16, 'CCCC');
 like($gap_err, qr/offset/i, 'gap in offset is rejected');

@@ -113,4 +113,15 @@ like $h,   qr{&lt;/span&gt;}, 'injected </span> escaped';
 $h = Iczelia::Highlight::highlight('abc 123', 'no-such-lang');
 like $h, qr{<pre class="hl"><code>abc 123</code></pre>}, 'unknown -> plain';
 
+# CRLF input: end-of-line rules ([^\n]* in line comments, preprocessor)
+# must not trap the trailing \r inside a span, or the browser renders it
+# as a spurious extra line break.
+$h = Iczelia::Highlight::highlight("#include <a.h>\r\nx; // c\r\n", 'c');
+unlike $h, qr{\r},                              'CRLF folded out entirely';
+unlike $h, qr{<span[^>]*>[^<]*\n[^<]*</span>}, 'no newline trapped in a span';
+like $h,   qr{<span class="hl-pre">#include &lt;a\.h&gt;</span>\n},
+  'preprocessor span ends before the newline';
+like $h,   qr{<span class="hl-com">// c</span>\n},
+  'line-comment span ends before the newline';
+
 done_testing;

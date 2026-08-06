@@ -16,6 +16,7 @@
 
   var CHUNK_SIZE      = 2 * 1024 * 1024;  // 2 MB per POST
   var NATIVE_SIZE_OK  = 6 * 1024 * 1024;  // below this, just let the form post
+  var CHUNK_RETRIES   = 4;
 
   function supported() {
     return document.querySelector
@@ -57,10 +58,16 @@
     opts.method = 'POST';
     return fetch(url, opts).then(function (r) {
       return r.json().then(function (j) {
-        if (!r.ok) throw new Error(j && j.error ? j.error : 'http ' + r.status);
+        if (!r.ok) {
+          var e = new Error(j && j.error ? j.error : 'http ' + r.status);
+          e.httpStatus = r.status;
+          throw e;
+        }
         return j;
       }, function () {
-        throw new Error('non-json response (http ' + r.status + ')');
+        var e = new Error('non-json response (http ' + r.status + ')');
+        e.httpStatus = r.status;
+        throw e;
       });
     });
   }
@@ -76,10 +83,23 @@
     var url = '/admin/upload/chunk?id=' + encodeURIComponent(id)
             + '&offset=' + offset
             + '&csrf=' + encodeURIComponent(csrfToken());
-    return postJSON(url, {
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: blob,
-    });
+    var attempt = 0;
+    function send() {
+      return postJSON(url, {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: blob,
+      }).catch(function (err) {
+        var status = err && err.httpStatus;
+        var transient = !status || status === 408 || status === 429
+          || status === 502 || status === 503 || status === 504;
+        if (!transient || attempt >= CHUNK_RETRIES) throw err;
+        var delay = 250 * Math.pow(2, attempt++);
+        return new Promise(function (resolve) {
+          window.setTimeout(resolve, delay);
+        }).then(send);
+      });
+    }
+    return send();
   }
 
   function abort(id) {
@@ -175,6 +195,15 @@
     var forms = document.querySelectorAll('form[data-cms-upload]');
     for (var i = 0; i < forms.length; i++) attach(forms[i]);
   }
+
+  // The subpage directory uploader reuses the same resumable transport for
+  // individual members that are too large for a normal multipart request.
+  window.IczeliaUpload = {
+    uploadFile: uploadFile,
+    abort: abort,
+    fmtSize: fmtSize,
+    nativeSize: NATIVE_SIZE_OK
+  };
 
   if (!supported()) return;
 

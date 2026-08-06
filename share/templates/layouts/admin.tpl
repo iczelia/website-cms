@@ -47,7 +47,7 @@
 <script src="/vendor/codemirror/active-line.min.js"></script>
 <script src="/vendor/marked.min.js"></script>
 <script src="/cms.js"></script>
-<script src="/cms-upload.js"></script>
+<script src="/cms-upload.js?v=subpage-batch-3"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

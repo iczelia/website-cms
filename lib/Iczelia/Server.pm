@@ -282,7 +282,7 @@ sub _worker_loop {
         $verdict = $self->_handle_one(
           $cli,
           state      => $io_state,
-          timeout    => $first ? $first_to : $ka_timeout,
+          timeout    => $first_to,
           is_last    => $is_last,
           ka_timeout => $ka_timeout,
           ka_max     => $ka_max,

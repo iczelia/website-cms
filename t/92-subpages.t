@@ -663,7 +663,7 @@ is(Iczelia::Subpages::detect_file_type('tool.pl',
     'admin edit subdir: parent link present');
   like($sub_html, qr/name="dir" value="css\/sub"/,
     'admin edit subdir: upload form carries current dir');
-  like($sub_html, qr/upload a file to.*\/demo\/css\/sub\//s,
+  like($sub_html, qr/upload files or a directory to.*\/demo\/css\/sub\//s,
     'admin edit subdir: upload heading reflects current dir');
   unlike($sub_html, qr/save details/,
     'admin edit subdir: meta form hidden outside root');

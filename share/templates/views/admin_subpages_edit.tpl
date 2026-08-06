@@ -68,20 +68,27 @@
   </section>
 
   <section class="cms-subpage-section">
-    <h2>upload a file to <code>{{ dir_url }}</code></h2>
-    <form class="cms-form" method="POST" action="/admin/subpages/{{ sp.id }}/file/upload" enctype="multipart/form-data">
+    <h2>upload files or a directory to <code>{{ dir_url }}</code></h2>
+    <form class="cms-form cms-subpage-upload" id="cms-subpage-upload" method="POST" action="/admin/subpages/{{ sp.id }}/file/upload" enctype="multipart/form-data">
       <input type="hidden" name="csrf" value="{{ csrf.file }}">
       <input type="hidden" name="dir" value="{{ dir }}">
       <fieldset class="cms-field cms-field-text">
-        <legend>file</legend>
-        <input type="file" name="file" required>
+        <legend>files</legend>
+        <input type="file" name="files" id="cms-subpage-upload-files" multiple>
+        <p class="cms-help">select one or more individual files. Large files automatically use the resumable chunked uploader with live progress.</p>
       </fieldset>
       <fieldset class="cms-field cms-field-text">
-        <legend>path (optional)</legend>
-        <input type="text" name="path" maxlength="255" placeholder="defaults to the uploaded file name">
-        <p class="cms-help">leave blank to drop the file into this directory; a path with slashes is taken relative to the bundle root and overrides the directory.</p>
+        <legend>directory</legend>
+        <input type="file" name="directory" id="cms-subpage-upload-directory" webkitdirectory directory multiple>
+        <p class="cms-help">select a directory; its folder structure is preserved below the directory currently open in the panel, and large members are uploaded in resumable chunks.</p>
       </fieldset>
-      <p class="cms-actions"><button type="submit" class="cms-btn cms-btn-primary">upload file</button></p>
+      <fieldset class="cms-field cms-field-text">
+        <legend>path override (optional, one file only)</legend>
+        <input type="text" name="path" id="cms-subpage-upload-path" maxlength="255" placeholder="defaults to the uploaded file name">
+        <p class="cms-help">for a single file, a bare name lands here; a path containing slashes is relative to the bundle root. Leave blank for batches and directories.</p>
+      </fieldset>
+      <p class="cms-actions"><button type="submit" class="cms-btn cms-btn-primary">upload selection</button></p>
+      <p class="cms-subpage-upload-status" id="cms-subpage-upload-status" aria-live="polite"></p>
     </form>
   </section>
 
@@ -107,5 +114,5 @@
   </section>
 {% endif %}</article>
 {% endblock %}
-{% block scripts %}<script src="/cms-subpages.js"></script>
+{% block scripts %}<script src="/cms-subpages.js?v=subpage-batch-3"></script>
 {% endblock %}

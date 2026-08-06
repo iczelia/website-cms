@@ -23,7 +23,6 @@ use Iczelia::Upload    ();
 use Iczelia::Util      qw(escape_url);
 use File::Path         qw(make_path remove_tree);
 use File::Spec         ();
-use File::Copy         qw(move);
 use Digest::SHA        qw(sha256_hex);
 use JSON::PP           ();
 use DBI                ();
@@ -205,19 +204,110 @@ sub _list_dir_files {
   return @out;
 }
 
-# Returns 1 if the archive is safe to extract.
-sub _archive_paths_safe {
+
+sub _archive_problem {
   my ($tar_path) = @_;
   my $iter = eval {Archive::Tar->iter($tar_path)};
-  return 0 unless $iter;
+  return 'archive unreadable (corrupt or not a tar)' unless $iter;
   my $total = 0;
   while (my $entry = eval {$iter->()}) {
     my $name = $entry->full_path;
-    return 0 unless defined $name && length $name;
-    return 0 if $name =~ m{^/} || $name =~ m{(?:^|/)\.\.(?:/|$)};
+    return 'unsafe path in archive' unless defined $name && length $name;
+    return 'unsafe path in archive'
+      if $name =~ m{^/} || $name =~ m{(?:^|/)\.\.(?:/|$)};
     $total += $entry->size || 0;
   }
+  return undef;
+}
+
+# Restore the live db from a validated snapshot WITHOUT swapping files.
+sub _restore_from_snapshot {
+  my ($db, $snap) = @_;
+
+  my $tables = do {
+    my $s = DBI->connect("dbi:SQLite:dbname=$snap", '', '',
+      {RaiseError => 1, PrintError => 0});
+    my $r = $s->selectcol_arrayref(
+      q{SELECT name FROM sqlite_master WHERE type='table'
+          AND name NOT LIKE 'sqlite_%' ORDER BY name});
+    $s->disconnect;
+    $r;
+  };
+
+  my $dbh = $db->dbh;
+  $dbh->do('ATTACH DATABASE ? AS src', undef, $snap);
+  my $ok = eval {
+    $dbh->begin_work;
+    $dbh->do('PRAGMA defer_foreign_keys = ON');
+    for my $t (@$tables) {
+      my @cols = _common_columns($dbh, $t);
+      next unless @cols;
+      my $list = join ',', map {qq{"$_"}} @cols;
+      $dbh->do(qq{DELETE FROM main."$t"});
+      $dbh->do(qq{INSERT INTO main."$t" ($list) SELECT $list FROM src."$t"});
+    }
+    $dbh->commit;
+    1;
+  };
+  my $err = $@;
+  unless ($ok) {
+    unless (eval {$dbh->rollback; 1}) {
+      warn "restore: rollback failed: $@";
+      eval {$db->reconnect};    # drop the wedged write transaction
+    }
+  }
+  eval {$dbh->do('DETACH DATABASE src')};
+  die($err || "restore failed\n") unless $ok;
   return 1;
+}
+
+# Column names present in BOTH main.<t> and src.<t>, in main's order.
+sub _common_columns {
+  my ($dbh, $t) = @_;
+  my $main = $dbh->selectall_arrayref(qq{PRAGMA main.table_info("$t")});
+  my $src  = $dbh->selectall_arrayref(qq{PRAGMA src.table_info("$t")});
+  my %in_src = map {$_->[1] => 1} @$src;
+  return grep {$in_src{$_}} map {$_->[1]} @$main;
+}
+
+# Replace $dst's contents with $src's without a wipe-then-copy window:
+# stage into a sibling dir on the same filesystem, then swap with two
+# renames. On any failure $dst is left untouched. Returns undef on
+# success, else an error string.
+sub _swap_media_dir {
+  my ($src, $dst) = @_;
+  my $staging = "$dst.incoming.$$";
+  my $old     = "$dst.old.$$";
+  remove_tree($staging) if -e $staging;
+
+  my $ok = eval {
+    make_path($staging);
+    if (opendir my $dh, $src) {
+      for my $fn (readdir $dh) {
+        next if $fn =~ /^\./ || $fn =~ m{[/\\]};
+        _copy_file("$src/$fn", "$staging/$fn");
+      }
+      closedir $dh;
+    }
+    1;
+  };
+  unless ($ok) {
+    my $e = $@ || 'copy failed';
+    remove_tree($staging);
+    return $e;
+  }
+
+  if (-e $dst) {
+    rename($dst, $old) or do {remove_tree($staging); return "rename dst: $!"};
+  }
+  unless (rename($staging, $dst)) {
+    my $e = "$!";
+    rename($old, $dst) if -e $old;
+    remove_tree($staging);
+    return "rename staging: $e";
+  }
+  remove_tree($old) if -e $old;
+  return undef;
 }
 
 sub _import {
@@ -273,9 +363,9 @@ sub _import {
     close $fh;
   }
 
-  unless (_archive_paths_safe($tar_path)) {
+  if (my $why = _archive_problem($tar_path)) {
     remove_tree($work);
-    return Iczelia::HTTP::error(400, 'archive contains unsafe paths');
+    return Iczelia::HTTP::error(400, $why);
   }
   unless (_extract_archive($tar_path, $work)) {
     remove_tree($work);
@@ -289,6 +379,9 @@ sub _import {
   my $ok = eval {
     my $vdb = DBI->connect("dbi:SQLite:dbname=$snap", '', '',
       {RaiseError => 1, PrintError => 0});
+    my ($integ) = $vdb->selectrow_array('PRAGMA integrity_check');
+    die "snapshot integrity_check: $integ\n"
+      unless defined $integ && $integ eq 'ok';
     for my $t (qw(posts pages auth settings)) {
       $vdb->selectrow_array("SELECT 1 FROM $t LIMIT 1");
     }
@@ -300,36 +393,30 @@ sub _import {
     return Iczelia::HTTP::error(400, 'archive failed validation');
   }
 
-  my $live_path = $ctx->db->{path};
-  eval {$ctx->db->disconnect};
-  move($live_path, "$live_path.preimport") if -f $live_path;
-  unless (move($snap, $live_path)) {
-    my $err = "$!";
+  # Snapshot the live db before overwriting its contents, so a regretted
+  # or failed import is recoverable. Refuse to proceed if we can't.
+  my $backup = $ctx->db->{path} . '.preimport-' . _date_stamp();
+  unless (eval {$ctx->db->dbh->do('VACUUM INTO ?', undef, $backup); 1}) {
+    my $berr = $@;
     remove_tree($work);
-    move("$live_path.preimport", $live_path)
-      if -e "$live_path.preimport";
-    return Iczelia::HTTP::error(500, "rename: $err");
+    return Iczelia::HTTP::error(500, "pre-import backup failed: $berr");
   }
-  eval {$ctx->db->reconnect};
+
+  unless (eval {_restore_from_snapshot($ctx->db, $snap); 1}) {
+    my $rerr = $@;
+    remove_tree($work);
+    return Iczelia::HTTP::error(500,
+      "restore failed (live db unchanged): $rerr");
+  }
 
   my $media_src = "$work/media";
   my $media_dst = $ctx->cfg->{'media-dir'};
   if ($media_dst && -d $media_src) {
-    make_path($media_dst) unless -d $media_dst;
-    if (opendir my $dh, $media_dst) {
-      for my $fn (readdir $dh) {
-        next                    if $fn =~ /^\./;
-        unlink "$media_dst/$fn" if -f "$media_dst/$fn";
-      }
-      closedir $dh;
-    }
-    if (opendir my $dh, $media_src) {
-      for my $fn (readdir $dh) {
-        next if $fn =~ /^\./;
-        next if $fn =~ m{[/\\]};
-        _copy_file("$media_src/$fn", "$media_dst/$fn");
-      }
-      closedir $dh;
+    if (my $merr = _swap_media_dir($media_src, $media_dst)) {
+      remove_tree($work);
+      return Iczelia::HTTP::error(500,
+        "db restored but media swap failed: $merr "
+        . "(old media left intact; pre-import db backup at $backup)");
     }
   }
 

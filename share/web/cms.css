@@ -573,6 +573,9 @@ a:hover { text-decoration: underline }
 .cms-subpage-status { font-size: 12px; color: #888 }
 .cms-subpage-status-ok  { color: #2f6f3f }
 .cms-subpage-status-err { color: #c44 }
+.cms-subpage-upload-status { min-height: 1.3em; font-size: 12px; color: #666 }
+.cms-subpage-upload-status-ok { color: #2f6f3f }
+.cms-subpage-upload-status-err { color: #c44 }
 .cms-subpage-edit .CodeMirror { border: 1px solid #ccc; height: 440px }
 .cms-subpage-crumbs { font-family: ui-monospace, monospace; font-size: 0.95em }
 .cms-subpage-crumbs a { color: #1a3a7a; text-decoration: none }

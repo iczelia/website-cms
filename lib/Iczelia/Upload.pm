@@ -128,9 +128,6 @@ sub append {
   return (undef, 'already finalized') if $row->{finalized_at};
   return (undef, 'chunk too large')
     if length($bytes) > MAX_CHUNK;
-  return (undef, 'size cap exceeded')
-    if $row->{size} + length($bytes) > $self->{max_size};
-  return (undef, 'offset mismatch') unless $offset == $row->{size};
 
   my $path = $self->_path_for($id);
   my $fh;
@@ -139,21 +136,72 @@ sub append {
   }
   binmode $fh;
   flock($fh, LOCK_EX) or do { close $fh; return (undef, "lock: $!") };
-  # Re-read size under the lock; a parallel chunk may have raced us.
+
+  # The file is authoritative while locked.  In particular, a proxy can
+  # lose the response after a successful write and make the client replay
+  # the same chunk.  Accept an identical overlap so retries are idempotent;
+  # reject an overlap containing different bytes.
   my $current = -s $fh;
-  if ($current != $offset) {
+  if ($offset > $current) {
     flock($fh, LOCK_UN); close $fh;
-    return (undef, 'offset raced');
+    return (undef, 'offset mismatch');
   }
-  seek($fh, $current, 0);
-  my $written = syswrite($fh, $bytes);
+  my $overlap = $current - $offset;
+  $overlap = length($bytes) if $overlap > length($bytes);
+  if ($overlap > 0) {
+    seek($fh, $offset, 0) or do {
+      my $e = $!; flock($fh, LOCK_UN); close $fh;
+      return (undef, "seek: $e");
+    };
+    my $existing = '';
+    while (length($existing) < $overlap) {
+      my $n = sysread($fh, $existing, $overlap - length($existing),
+        length($existing));
+      if (!defined $n || $n == 0) {
+        my $e = $! || 'short read';
+        flock($fh, LOCK_UN); close $fh;
+        return (undef, "read: $e");
+      }
+    }
+    if ($existing ne substr($bytes, 0, $overlap)) {
+      flock($fh, LOCK_UN); close $fh;
+      return (undef, 'offset mismatch');
+    }
+  }
+
+  my $remaining = substr($bytes, $overlap);
+  if ($current + length($remaining) > $self->{max_size}) {
+    flock($fh, LOCK_UN); close $fh;
+    return (undef, 'size cap exceeded');
+  }
+  seek($fh, $current, 0) or do {
+    my $e = $!; flock($fh, LOCK_UN); close $fh;
+    return (undef, "seek: $e");
+  };
+  my $written = 0;
+  while ($written < length($remaining)) {
+    my $n = syswrite($fh, $remaining, length($remaining) - $written,
+      $written);
+    if (!defined $n || $n == 0) {
+      my $e = $! || 'short write';
+      flock($fh, LOCK_UN); close $fh;
+      return (undef, "write: $e");
+    }
+    $written += $n;
+  }
+  my $new_size = $current + $written;
+
+  # Keep the row in sync before another worker can acquire the file lock.
+  # A replay also repairs a stale row left by an interrupted DB update.
+  my $updated = eval {
+    $self->{db}->do_(
+      'UPDATE upload_sessions SET size=? WHERE id=?', $new_size, $id);
+    1;
+  };
+  my $db_err = $@;
   flock($fh, LOCK_UN);
   close $fh;
-  return (undef, "write: $!") unless defined $written;
-
-  my $new_size = $current + $written;
-  $self->{db}->do_(
-    'UPDATE upload_sessions SET size=? WHERE id=?', $new_size, $id);
+  return (undef, "database: $db_err") unless $updated;
   return ($new_size, undef);
 }
 

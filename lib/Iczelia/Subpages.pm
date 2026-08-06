@@ -30,6 +30,10 @@ use constant {
   MAX_FILES => 1000,
   MAX_FILE  => 8 * 1024 * 1024,
   MAX_TOTAL => 32 * 1024 * 1024,
+
+  # Most a listing will read from one file. Past it, language detection
+  # falls back to the name and an outsized README goes unrendered.
+  SNIFF_MAX_SIZE => 1024 * 1024,
 };
 
 my %CT = (
@@ -210,7 +214,9 @@ sub icon_for {
   return $EXT_ICON{$ext} || 'file.png';
 }
 
-sub icon_for_entry {
+# icon_for_entry's name/content-type half. undef when the choice needs
+# {lang}. _attach_langs keys its sniff off this so the two can't drift.
+sub icon_from_type {
   my ($name, %meta) = @_;
   return 'folder.png' if ($meta{type} // '') eq 'dir';
   return 'file.png' unless defined $name && length $name;
@@ -225,7 +231,15 @@ sub icon_for_entry {
   return 'font.png'    if $ct =~ m{\A(?:font/|application/(?:font|vnd\.ms-fontobject))};
   return 'exec.png'    if $ct =~ m{\Aapplication/(?:wasm|x-elf)\b};
   return 'file.png'    if $meta{is_binary};
+  return undef;
+}
 
+sub icon_for_entry {
+  my ($name, %meta) = @_;
+  my $early = icon_from_type($name, %meta);
+  return $early if defined $early;
+
+  my $ct   = $meta{content_type} // '';
   my $lang = $meta{lang};
   if (defined $lang && length $lang) {
     return 'lhaskell.png' if $lang eq 'haskell' && $name =~ /\.lhs\z/i;
@@ -560,15 +574,60 @@ sub replace_files {
 # Upsert a single bundle file. Returns the cleaned path or undef.
 sub put_file {
   my ($db, $id, $path, $content, %opt) = @_;
-  my $rel = sanitize_rel_path($path);
-  return undef unless defined $rel;
-  $content = '' unless defined $content;
-  my $det = detect_file_type($rel, $content);
-  my $ct = $opt{content_type} || $det->{content_type};
-  my $bin =
-      exists $opt{is_binary}
-    ? ($opt{is_binary} ? 1 : 0)
-    : _is_binary($content, $ct);
+  my ($paths) = put_files(
+    $db, $id,
+    [
+      {
+        path    => $path,
+        content => $content,
+        (defined $opt{content_type}
+          ? (content_type => $opt{content_type}) : ()),
+        (exists $opt{is_binary}
+          ? (is_binary => $opt{is_binary}) : ()),
+      }
+    ],
+    # put_file historically had no size cap; its callers enforce the
+    # appropriate limit themselves (or import trusted bundle content).
+    unlimited => 1,
+  );
+  return $paths ? $paths->[0] : undef;
+}
+
+# Atomically upsert a batch of files. Validation and type detection happen
+# before the transaction, so a bad path, duplicate destination or oversized
+# native upload cannot leave half a directory behind.
+#
+# Returns (\@clean_paths, undef) on success, or (undef, $error).
+sub put_files {
+  my ($db, $id, $files, %opt) = @_;
+  return (undef, 'choose one or more files')
+    unless ref($files) eq 'ARRAY' && @$files;
+
+  my (@ready, %seen);
+  for my $f (@$files) {
+    my $rel = sanitize_rel_path($f->{path});
+    return (undef, 'invalid file path') unless defined $rel;
+    return (undef, "duplicate upload path: $rel") if $seen{$rel}++;
+
+    my $content = defined $f->{content} ? $f->{content} : '';
+    return (undef, "file too large: $rel")
+      if !$opt{unlimited} && length($content) > MAX_FILE;
+
+    my $det = detect_file_type($rel, $content);
+    my $ct = defined $f->{content_type} && length $f->{content_type}
+      ? $f->{content_type} : $det->{content_type};
+    my $bin = exists $f->{is_binary}
+      ? ($f->{is_binary} ? 1 : 0)
+      : _is_binary($content, $ct);
+    push @ready, {
+      path         => $rel,
+      content      => $content,
+      content_type => $ct,
+      size         => length($content),
+      is_binary    => $bin,
+    };
+  }
+
   my $now = time;
   $db->tx(
     sub {
@@ -583,18 +642,20 @@ sub put_file {
               size=excluded.size, is_binary=excluded.is_binary,
               updated_at=excluded.updated_at}
       );
-      $sth->bind_param(1, $id);
-      $sth->bind_param(2, $rel);
-      $sth->bind_param(3, $content, DBI::SQL_BLOB());
-      $sth->bind_param(4, $ct);
-      $sth->bind_param(5, length $content);
-      $sth->bind_param(6, $bin);
-      $sth->bind_param(7, $now);
-      $sth->execute;
+      for my $f (@ready) {
+        $sth->bind_param(1, $id);
+        $sth->bind_param(2, $f->{path});
+        $sth->bind_param(3, $f->{content}, DBI::SQL_BLOB());
+        $sth->bind_param(4, $f->{content_type});
+        $sth->bind_param(5, $f->{size});
+        $sth->bind_param(6, $f->{is_binary});
+        $sth->bind_param(7, $now);
+        $sth->execute;
+      }
       $d->do_('UPDATE subpages SET updated_at=? WHERE id=?', $now, $id);
     }
   );
-  return $rel;
+  return ([map {$_->{path}} @ready], undef);
 }
 
 sub delete_file {
@@ -625,14 +686,28 @@ sub directory_entries {
   $dir =~ s{^/+}{};
   $dir =~ s{/+$}{};
   my $prefix = length($dir) ? "$dir/" : '';
-  my $rows = $db->all(
-    q{SELECT path, size, updated_at, content_type, is_binary,
-             SUBSTR(content, 1, 8192) AS sniff
-        FROM subpage_files WHERE subpage_id=? ORDER BY path}, $id
-  );
+
+  # Scope the structural scan to this directory's subtree via the
+  # UNIQUE(subpage_id, path) index, and pull only cheap metadata.
+  my $rows;
+  if (length $prefix) {
+    (my $hi = $prefix) =~ s{/\z}{0};    # half-open upper bound of "$prefix*"
+    $rows = $db->all(
+      q{SELECT path, size, updated_at, content_type, is_binary
+          FROM subpage_files
+         WHERE subpage_id=? AND path >= ? AND path < ?
+         ORDER BY path}, $id, $prefix, $hi
+    );
+  }
+  else {
+    $rows = $db->all(
+      q{SELECT path, size, updated_at, content_type, is_binary
+          FROM subpage_files WHERE subpage_id=? ORDER BY path}, $id
+    );
+  }
+
   my (%dirs, @files);
   for my $r (@$rows) {
-    next unless index($r->{path}, $prefix) == 0;
     my $rest = substr($r->{path}, length $prefix);
     next if $rest eq '';
     if ($rest =~ m{^([^/]+)/}) {
@@ -650,14 +725,49 @@ sub directory_entries {
         path         => $r->{path},
         content_type => $r->{content_type},
         is_binary    => $r->{is_binary},
-        lang         => Iczelia::Highlight::lang_for_file($rest, $r->{sniff}),
         };
     }
   }
+
+  _attach_langs($db, $id, \@files) if @files;
+
   my @out = map { {type => 'dir', name => $_, updated_at => $dirs{$_}} }
     sort keys %dirs;
   push @out, sort { $a->{name} cmp $b->{name} } @files;
   return \@out;
+}
+
+# Set {lang} on each listed file from the first 8 KB of its content.
+sub _attach_langs {
+  my ($db, $id, $files) = @_;
+
+  my @want;
+  for my $f (@$files) {
+    $f->{lang} = undef;
+    next
+      if defined icon_from_type($f->{name},
+      content_type => $f->{content_type},
+      is_binary    => $f->{is_binary});
+    push @want, $f;
+  }
+  return unless @want;
+
+  my @paths = map {$_->{path}}
+    grep {!defined $_->{size} || $_->{size} <= SNIFF_MAX_SIZE} @want;
+  my %sniff;
+  while (@paths) {
+    my @chunk = splice @paths, 0, 500;
+    my $ph    = join ',', ('?') x @chunk;
+    my $heads = $db->all(
+      qq{SELECT path, SUBSTR(content, 1, 8192) AS sniff
+           FROM subpage_files WHERE subpage_id=? AND path IN ($ph)},
+      $id, @chunk
+    );
+    $sniff{$_->{path}} = $_->{sniff} for @$heads;
+  }
+  $_->{lang}
+    = Iczelia::Highlight::lang_for_file($_->{name}, $sniff{$_->{path}})
+    for @want;
 }
 
 sub delete {

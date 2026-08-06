@@ -54,6 +54,17 @@ sub invalidate_post {
 
 sub invalidate_home {$_[0]->invalidate_page('home')}
 
+# One file edit can change any URL under /<slug>/, so drop the whole
+# prefix. Pass both slugs on rename; the old one now 404s.
+sub invalidate_subpage {
+  my ($self, @slugs) = @_;
+  return unless $self->{cache};
+  for my $slug (@slugs) {
+    next unless defined $slug && length $slug;
+    $self->{cache}->bust_prefix("/$slug/");
+  }
+}
+
 # Wholesale wipe; used after settings changes and as a manual reset.
 sub invalidate_all {
   my ($self) = @_;

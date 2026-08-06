@@ -116,7 +116,7 @@ sub get {
   # decision-making query stays cheap. We pull only the body column we
   # actually need in the second query.
   my $head = $self->{db}->row(
-    'SELECT status, content_type, etag,
+    'SELECT status, content_type, etag, cache_control, vary,
                 length(body)    AS len_body,
                 length(body_gz) AS len_gz,
                 length(body_br) AS len_br
@@ -126,7 +126,15 @@ sub get {
 
   my $etag = $head->{etag};
 
-  # If-None-Match match -> 304 so clients keep their cached body.
+  # Rows predating these columns are NULL.
+  my $cc = $head->{cache_control};
+  $cc = Iczelia::CachePolicy::cache_control_for($path)
+    unless defined $cc && length $cc;
+  my $vary = $head->{vary};
+  $vary = 'Accept-Encoding' unless defined $vary && length $vary;
+
+  # 304 so clients keep their cached body. The freshness headers ride
+  # along, else the client stops revalidating.
   my $inm = $req && $req->{headers}{'if-none-match'};
   if (defined $inm && length $inm) {
     for my $tag (split /\s*,\s*/, $inm) {
@@ -138,8 +146,9 @@ sub get {
         return {
           status  => 304,
           headers => {
-            ETag => qq{"$etag"},
-            Vary => 'Accept-Encoding',
+            ETag            => qq{"$etag"},
+            Vary            => $vary,
+            'Cache-Control' => $cc,
           },
           body => '',
         };
@@ -171,8 +180,8 @@ sub get {
   my %hdr = (
     'Content-Type'  => $head->{content_type},
     ETag            => qq{"$etag"},
-    Vary            => 'Accept-Encoding',
-    'Cache-Control' => Iczelia::CachePolicy::cache_control_for($path),
+    Vary            => $vary,
+    'Cache-Control' => $cc,
     'X-Cache'       => 'HIT',
   );
   $hdr{'Content-Encoding'} = $enc if $enc;
@@ -202,13 +211,22 @@ sub put {
   }
 
   my $hdrs = $resp->{headers} || {};
-  my $cc   = lc($hdrs->{'Cache-Control'} // '');
-  return undef if $cc =~ /\b(?:private|no-store|no-cache)\b/;
+  my $cc   = $hdrs->{'Cache-Control'};
+  return undef
+    if defined $cc && lc($cc) =~ /\b(?:private|no-store|no-cache)\b/;
 
   # Catch handlers that bypassed $resp->{cookies} via raw headers.
   for my $k (keys %$hdrs) {
     return undef if lc($k) eq 'set-cookie';
   }
+
+  $cc = Iczelia::CachePolicy::cache_control_for($path)
+    unless defined $cc && length $cc;
+  my $vary = $hdrs->{Vary};
+  $vary =
+    !defined $vary || !length $vary  ? 'Accept-Encoding'
+    : $vary =~ /\bAccept-Encoding\b/i ? $vary
+    :                                   "$vary, Accept-Encoding";
 
   my $ct = $hdrs->{'Content-Type'} // 'text/html; charset=utf-8';
 
@@ -234,12 +252,13 @@ sub put {
   # corrupt the gzip/brotli payloads.
   my $stored = eval {
     my $sth = $self->{db}->dbh->prepare(
-      q{INSERT INTO response_cache(path,status,content_type,body,body_gz,body_br,etag,created_at)
-              VALUES(?,?,?,?,?,?,?, strftime('%s','now'))
+      q{INSERT INTO response_cache(path,status,content_type,body,body_gz,body_br,etag,cache_control,vary,created_at)
+              VALUES(?,?,?,?,?,?,?,?,?, strftime('%s','now'))
               ON CONFLICT(path) DO UPDATE SET
                   status=excluded.status, content_type=excluded.content_type,
                   body=excluded.body, body_gz=excluded.body_gz,
                   body_br=excluded.body_br, etag=excluded.etag,
+                  cache_control=excluded.cache_control, vary=excluded.vary,
                   created_at=excluded.created_at}
     );
     $sth->bind_param(1, $path);
@@ -255,6 +274,8 @@ sub put {
       $sth->bind_param(6, undef);
     }
     $sth->bind_param(7, $etag);
+    $sth->bind_param(8, $cc);
+    $sth->bind_param(9, $vary);
     $sth->execute;
     1;
   };
@@ -267,8 +288,8 @@ sub put {
     headers => {
       'Content-Type'  => $ct,
       ETag            => qq{"$etag"},
-      Vary            => 'Accept-Encoding',
-      'Cache-Control' => Iczelia::CachePolicy::cache_control_for($path),
+      Vary            => $vary,
+      'Cache-Control' => $cc,
       'X-Cache'       => 'STORE',
     },
     body => $body,

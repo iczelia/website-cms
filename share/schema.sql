@@ -173,6 +173,9 @@ CREATE TABLE IF NOT EXISTS subpage_files (
   UNIQUE (subpage_id, path)
 );
 CREATE INDEX IF NOT EXISTS subpage_files_pid ON subpage_files(subpage_id);
+CREATE INDEX IF NOT EXISTS subpage_files_listing
+  ON subpage_files(subpage_id, path, size, updated_at,
+                   content_type, is_binary);
 
 CREATE TABLE IF NOT EXISTS git_repos (
   id                INTEGER PRIMARY KEY,
@@ -361,15 +364,19 @@ CREATE TABLE IF NOT EXISTS login_throttle (
 -- Pre-rendered, pre-compressed responses for public GET requests.  Body
 -- is stored uncompressed plus zopfli-gzipped and brotli-encoded variants
 -- so we can content-negotiate without paying compression cost on hits.
+-- cache_control and vary carry the headers the handler served the miss
+-- with, so a hit replays them instead of the path-derived default.
 CREATE TABLE IF NOT EXISTS response_cache (
-  path         TEXT PRIMARY KEY,
-  status       INTEGER NOT NULL,
-  content_type TEXT NOT NULL,
-  body         BLOB NOT NULL,
-  body_gz      BLOB,
-  body_br      BLOB,
-  etag         TEXT NOT NULL,
-  created_at   INTEGER NOT NULL
+  path          TEXT PRIMARY KEY,
+  status        INTEGER NOT NULL,
+  content_type  TEXT NOT NULL,
+  body          BLOB NOT NULL,
+  body_gz       BLOB,
+  body_br       BLOB,
+  etag          TEXT NOT NULL,
+  cache_control TEXT,
+  vary          TEXT,
+  created_at    INTEGER NOT NULL
 );
 
 -- AI-slop bot trap. One row per (URL, UA-bucket) the trap has been
