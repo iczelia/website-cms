@@ -109,7 +109,7 @@ RUN set -eu; \
 
 # Pre-compile the Inline::C inference engine.
 RUN set -eu; \
-    install -d -m 0755 /opt/iczelia/_Inline; \
+    install -d -o iczelia -g iczelia -m 0755 /opt/iczelia/_Inline; \
     if perl -Ilib -MIczelia::Slop::Model -e1 >/tmp/inline.log 2>&1; then \
       echo "inline: compiled"; \
     else \

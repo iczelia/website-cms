@@ -73,20 +73,4 @@ Iczelia::Migrate::run($db);
 $db->apply_schema_file("$share/schema.sql");
 $db->apply_schema_file("$share/seed.sql");
 
-# Mint a cookie-secret beside the DB if there isn't one yet.
-my $secret_file = $cfg->{db};
-$secret_file =~ s{[^/]+\z}{cookie-secret};
-unless (-r $secret_file) {
-  open my $rng, '<:raw', '/dev/urandom' or die "/dev/urandom: $!";
-  my $buf;
-  sysread $rng, $buf, 32;
-  close $rng;
-  my $hex = unpack 'H*', $buf;
-  open my $fh, '>', $secret_file or die "$secret_file: $!";
-  print $fh $hex, "\n";
-  close $fh;
-  chmod 0600, $secret_file;
-  print "wrote cookie secret to $secret_file\n";
-}
-
 print "ok: db at $db_path\n";

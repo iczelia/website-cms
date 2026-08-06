@@ -33,7 +33,6 @@ inc/
 /*.zip
 
 # Own files
-attic/
 var/
 share/chrome/
 share/tinyllm/

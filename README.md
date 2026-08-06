@@ -43,7 +43,7 @@ Distro packages (Debian-flavoured names):
       web/                   cms.css, cms.js, vendor/ (CodeMirror, marked.js)
       chrome/                static visual chrome (CSS, fonts, asset packs)
     t/                       test suite (Test::More)
-    deploy/                  systemd unit, nginx site, tmpfiles, cron, install Makefile
+    deploy/                  Containerfile, podman quadlet + scripts, nginx site, remote deploy scripts
 
 Things that contain `iczelia-net` in their name are specific to the public-facing deployment at
 https://iczelia.net and can be safely ignored or deleted for a personal deployment. They however
@@ -62,9 +62,13 @@ may contain some useful reference material for nginx config and the like.
 
 ## Production install
 
-Two supported deployment shapes.
+Podman is the only supported shape. For a fresh remote host, run
+`deploy/bootstrap-remote-iczelia-net.sh` (it provisions packages, builds
+the image, installs the quadlet, obtains TLS, and wires up nginx); push
+later updates with `deploy/deploy-remote-iczelia-net.sh`. The steps below
+are the same thing done by hand, and for local use.
 
-### A. Podman / rootless container (recommended)
+### Podman container
 
 Bundles TeX Live and all Perl deps inside the image (~700 MB). Host
 needs `podman` and `nginx`. State (DB + media) lives in a named volume.
@@ -87,34 +91,19 @@ Quadlet (Podman >= 4.4):
     make podman-quadlet
     systemctl --user enable --now iczelia
 
-Front it with the host's nginx using `deploy/nginx.conf` as a
-template. The daemon serves chrome, cms.css/js, vendored JS, and
-`/media/` itself; nginx just terminates TLS and runs an edge
-proxy_cache.
-
-### B. Native systemd install (`make install`)
-
-    cd deploy
-    make install             # uses sudo; installs to /opt/iczelia, /var/lib/iczelia
-    sudo nginx -t && sudo systemctl reload nginx
-    sudo systemctl enable --now iczelia
-    sudo systemctl daemon-reload
-    sudo systemd-tmpfiles --create
-    sudo -u iczelia /opt/iczelia/bin/iczelia-passwd
-
-Default config lands at `/etc/iczelia/iczelia.conf`. Edit the SSL
-paths in `/etc/nginx/sites-available/iczelia.conf` for your certificate.
+Front it with the host's nginx using `deploy/nginx-iczelia-net.conf` as
+a template. The daemon serves chrome, cms.css/js, vendored JS, and
+`/media/` itself, and owns all caching; nginx just terminates TLS and
+reverse-proxies to `127.0.0.1:8731`.
 
 ## Operating
 
-- Daemon listens on `/run/iczelia/sock` by default and serves
-  everything (chrome, /media/, dynamic routes). nginx terminates TLS
-  and runs an edge `proxy_cache`.
-- nginx caches public GETs for 5 minutes; the daemon and the activity
-  fetcher `PURGE` paths after writes via a loopback-only endpoint.
-- `/etc/cron.d/iczelia` runs the fetcher every 10 minutes. Configure
-  `github.username`, `mastodon.feed_url`, `bluesky.handle` in
-  `/admin/settings/`.
+- Daemon listens on `127.0.0.1:8731` (TCP) by default and serves
+  everything (chrome, /media/, dynamic routes); it owns all caching.
+  nginx terminates TLS and reverse-proxies to it.
+- The container entrypoint (`deploy/entrypoint.sh`) runs the activity
+  fetcher every 10 minutes. Configure `github.username`,
+  `mastodon.feed_url`, `bluesky.handle` in `/admin/settings/`.
 - Math fragments are content-addressed in `tex_cache`. Oldest unused
   entries can be cleaned periodically:
   `DELETE FROM tex_cache WHERE created_at < strftime('%s','now') - 7*86400`.
@@ -134,10 +123,10 @@ After a successful update it runs the command in `update-restart-cmd`
 remote are `update-branch` / `update-remote` (default `release` on
 `origin`; set `update-remote=` empty to track a purely local branch).
 
-This only makes sense when the code is a git checkout. The `make
-install` and Podman shapes copy a snapshot of the code, so update them
-by pulling this repo and re-running `make install` / rebuilding the
-image. To wire it up on a checkout-based deployment:
+This only makes sense when the code is a git checkout. The Podman shape
+copies a snapshot of the code, so update it by pulling this repo and
+rebuilding the image (or run `deploy/deploy-remote-iczelia-net.sh`). To
+wire it up on a checkout-based deployment:
 
     */30 * * * * iczelia /path/to/checkout/bin/iczelia-update --config /etc/iczelia/iczelia.conf --quiet
 
