@@ -138,4 +138,17 @@ my $home_upd = $r->render_home;
 like($home_upd, qr{SENTINEL_UPDATE_BODY},
   q{/admin/updates/ -> updates table -> home renders update body});
 
+# 8: {{age}} in the profile blurb resolves to the site.age setting.
+# A fresh Render sidesteps the 60s settings memo on $r.
+$db->do_(
+  q{INSERT INTO settings(key,value) VALUES('site.age',?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value}, '23'
+);
+$content->save_page('home', 'iczelia :: personal site v2.0',
+  'home', $J->encode({profile => '{{ age }}, mathematician, programmer'}));
+my $home_age = Iczelia::Render->new(db => $db, template => $tpl)->render_home;
+like($home_age, qr{23, mathematician, programmer},
+  q{/admin/settings/ site.age -> home expands {{age}}});
+unlike($home_age, qr/\{\{\s*age\s*\}\}/, 'no literal placeholder survives');
+
 done_testing;

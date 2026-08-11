@@ -5,7 +5,7 @@
       "name":  "profile",
       "kind":  "markdown",
       "label": "Profile blurb",
-      "help":  "Shown in the profile pane (top-right of home). Inline links allowed."
+      "help":  "Shown in the profile pane (top-right of home). Inline links allowed. {{age}} expands to the site.age setting."
     }
   ]
 }

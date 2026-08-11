@@ -33,8 +33,8 @@ use constant TAG_FEED_SCAN_LIMIT => 60;
 #   render_not_found, render_updates_full, render_tag_page,
 #   render_tag_feed; private _year_nav_data, _kind_intro_html,
 #   _row_to_entry, _cached_page, _cache_page, _post_list,
-#   _home_load_page_data, _home_load_updates, _home_load_activity,
-#   _home_collapse_github, _home_load_blog_teaser.
+#   _home_load_page_data, _expand_age, _home_load_updates,
+#   _home_load_activity, _home_collapse_github, _home_load_blog_teaser.
 
 sub render_home {
   my ($self) = @_;
@@ -88,15 +88,25 @@ sub _home_load_page_data {
   my ($self) = @_;
   my $page = $self->{db}->row(q{SELECT * FROM pages WHERE slug='home'});
   return (undef, '', '') unless $page;
-  my $data         = decode_json_hash($page->{data});
-  my $profile_html = $self->_md($data->{profile} // '', inline => 1);
-  my $cur_row      = $self->{db}->row(
+  my $data = decode_json_hash($page->{data});
+  my $profile_html =
+    $self->_md($self->_expand_age($data->{profile} // ''), inline => 1);
+  my $cur_row = $self->{db}->row(
     q{SELECT text FROM activity WHERE source='currently'
                  ORDER BY position LIMIT 1}
   );
   my $currently =
     ($cur_row && defined $cur_row->{text}) ? $cur_row->{text} : '';
   return ($page, $profile_html, $currently);
+}
+
+sub _expand_age {
+  my ($self, $src) = @_;
+  return $src unless defined $src && $src =~ /\{\{/;
+  $self->_refresh_settings;
+  my $age = $self->{_settings_cache}{site}{age} // '';
+  $src =~ s/\{\{\s*age\s*\}\}/$age/g;
+  return $src;
 }
 
 # Three latest updates. mid/extra flags drive the chrome's responsive

@@ -37,7 +37,7 @@ my @SETTINGS_GROUPS = (
     'site', 'site',
     [
       qw(site.title site.tagline site.description site.keywords
-        site.og_image site.author site.email site.base_url
+        site.og_image site.author site.email site.base_url site.age
         site.copyright site.copyright_start site.copyright_holder)
     ]
   ],

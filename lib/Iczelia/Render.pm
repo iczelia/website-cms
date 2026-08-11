@@ -125,6 +125,7 @@ sub base_vars {
       email            => $email,
       email_html       => $email_html,
       tagline          => $s{site}{tagline} // '',
+      age              => $s{site}{age}     // '',
       author           => $author,
       title            => $s{site}{title} // 'iczelia',
     },
